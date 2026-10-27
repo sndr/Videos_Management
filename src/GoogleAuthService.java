@@ -34,9 +34,7 @@ public class GoogleAuthService {
         void onError(String message);
     }
 
-    private static final int OAUTH_PORT = 8989;
-    private static final String REDIRECT_URI = "http://127.0.0.1:" + OAUTH_PORT + "/oauth2callback";
-    private static HttpServer activeServer = null;
+    private static volatile HttpServer activeServer = null;
 
     /**
      * Inicia o fluxo oficial e real de autenticação com o Google OAuth 2.0.
@@ -54,23 +52,25 @@ public class GoogleAuthService {
                         MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
 
                 // 1. Inicia o servidor HTTP local para receber o redirect do Google
-                activeServer = HttpServer.create(new InetSocketAddress("127.0.0.1", OAUTH_PORT), 0);
-                activeServer.createContext("/oauth2callback", new GoogleOAuthCallbackHandler(clientId, clientSecret, callback, state, verifier));
+                activeServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+                String redirectUri = "http://127.0.0.1:" + activeServer.getAddress().getPort();
+                activeServer.createContext("/", new GoogleOAuthCallbackHandler(clientId, clientSecret, callback, state, verifier, redirectUri));
                 activeServer.setExecutor(null);
                 activeServer.start();
 
                 // 2. Constrói a URL oficial de consentimento do Google
-                String scopes = "openid profile email https://www.googleapis.com/auth/youtube.readonly";
+                // videos.update does not accept youtube.readonly; force-ssl is the least broad scope
+                // supported by YouTube for changing privacyStatus on an existing video.
+                String scopes = "openid profile email https://www.googleapis.com/auth/youtube.force-ssl";
                 String authUrl = "https://accounts.google.com/o/oauth2/v2/auth" +
                         "?client_id=" + URLEncoder.encode(clientId, StandardCharsets.UTF_8) +
-                        "&redirect_uri=" + URLEncoder.encode(REDIRECT_URI, StandardCharsets.UTF_8) +
+                        "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8) +
                         "&response_type=code" +
                         "&state=" + URLEncoder.encode(state, StandardCharsets.UTF_8) +
                         "&code_challenge=" + URLEncoder.encode(challenge, StandardCharsets.UTF_8) +
                         "&code_challenge_method=S256" +
                         "&scope=" + URLEncoder.encode(scopes, StandardCharsets.UTF_8) +
-                        "&access_type=offline" +
-                        "&prompt=consent";
+                        "&prompt=consent select_account";
 
                 // 3. Abre o navegador padrão do sistema
                 if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
@@ -101,7 +101,7 @@ public class GoogleAuthService {
         String channel = youtubeGet(client, "channels?part=contentDetails&mine=true", accessToken);
         String uploads = jsonField(channel, "uploads");
         if (uploads == null) throw new IOException("Não foi encontrado um canal do YouTube na conta autenticada.");
-        List<String> ids = new ArrayList<>();
+        Set<String> ids = new LinkedHashSet<>();
         String pageToken = null;
         do {
             String playlistUrl = "playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=" + URLEncoder.encode(uploads, StandardCharsets.UTF_8)
@@ -111,16 +111,16 @@ public class GoogleAuthService {
             while (idsMatcher.find()) ids.add(idsMatcher.group(1));
             pageToken = jsonField(playlist, "nextPageToken");
         } while (pageToken != null && !pageToken.isEmpty());
+        List<String> uniqueIds = new ArrayList<>(ids);
         List<Video> result = new ArrayList<>();
-        for (int start = 0; start < ids.size(); start += 50) {
-            String idList = String.join(",", ids.subList(start, Math.min(start + 50, ids.size())));
+        Set<String> addedVideoIds = new HashSet<>();
+        for (int start = 0; start < uniqueIds.size(); start += 50) {
+            String idList = String.join(",", uniqueIds.subList(start, Math.min(start + 50, uniqueIds.size())));
             String details = youtubeGet(client, "videos?part=snippet,contentDetails,statistics,status&id=" + URLEncoder.encode(idList, StandardCharsets.UTF_8), accessToken);
-            Matcher object = Pattern.compile("\\{\\s*\\\"kind\\\"\\s*:\\s*\\\"youtube#video\\\".*?(?=,\\s*\\\"kind\\\"|\\s*]\\s*})", Pattern.DOTALL).matcher(details);
-            while (object.find()) {
-                String item = object.group();
+            for (String item : jsonArrayObjects(details, "items")) {
                 String id = jsonField(item, "id");
                 String title = nestedField(item, "snippet", "title");
-                if (id == null || title == null) continue;
+                if (id == null || title == null || !addedVideoIds.add(id)) continue;
                 String privacy = nestedField(item, "status", "privacyStatus");
                 String status = "public".equals(privacy) ? "Publicado" : "private".equals(privacy) ? "Privado" : "unlisted".equals(privacy) ? "Não Listado" : "Desconhecido";
                 result.add(new Video(id, title, "YouTube", value(nestedField(item, "contentDetails", "duration")),
@@ -132,12 +132,145 @@ public class GoogleAuthService {
         return result;
     }
 
+    /** Changes the privacy of a video owned by the authenticated channel. */
+    public static String updateVideoPrivacy(String accessToken, String videoId, String privacyStatus) throws Exception {
+        if (!"private".equals(privacyStatus) && !"public".equals(privacyStatus)) {
+            throw new IllegalArgumentException("A visibilidade deve ser public ou private.");
+        }
+        if (videoId == null || !videoId.matches("[A-Za-z0-9_-]{11}")) {
+            throw new IllegalArgumentException("O item selecionado não parece ser um vídeo real do YouTube.");
+        }
+
+        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
+        String existingResponse = youtubeGet(client, "videos?part=status&id=" + URLEncoder.encode(videoId, StandardCharsets.UTF_8), accessToken);
+        List<String> videos = jsonArrayObjects(existingResponse, "items");
+        if (videos.isEmpty()) throw new IOException("O vídeo não foi encontrado ou não pertence à conta autenticada.");
+
+        String video = videos.get(0);
+        StringBuilder status = new StringBuilder("{\"privacyStatus\":\"").append(privacyStatus).append("\"");
+        appendStatusValue(status, video, "license", true);
+        appendStatusValue(status, video, "embeddable", false);
+        appendStatusValue(status, video, "publicStatsViewable", false);
+        appendStatusValue(status, video, "selfDeclaredMadeForKids", false);
+        appendStatusValue(status, video, "containsSyntheticMedia", false);
+        status.append('}');
+        String requestBody = "{\"id\":\"" + videoId + "\",\"status\":" + status + "}";
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://www.googleapis.com/youtube/v3/videos?part=status"))
+                .timeout(Duration.ofSeconds(25))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "application/json; charset=UTF-8")
+                .PUT(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) throw youtubeApiException(response.statusCode(), response.body());
+        String updated = nestedField(response.body(), "status", "privacyStatus");
+        if (!privacyStatus.equals(updated)) throw new IOException("O YouTube não confirmou a nova visibilidade do vídeo.");
+        return updated;
+    }
+
+    private static void appendStatusValue(StringBuilder target, String videoJson, String key, boolean stringValue) {
+        if (stringValue) {
+            String value = nestedField(videoJson, "status", key);
+            if (value != null) target.append(",\"").append(key).append("\":").append(quoteJson(value));
+            return;
+        }
+        String raw = nestedRawField(videoJson, "status", key);
+        if (raw != null && !"null".equals(raw)) target.append(",\"").append(key).append("\":").append(raw);
+    }
+
+    private static String nestedRawField(String json, String parent, String key) {
+        Matcher parentMatcher = Pattern.compile("\\\"" + Pattern.quote(parent) + "\\\"\\s*:\\s*\\{").matcher(json);
+        if (!parentMatcher.find()) return null;
+        int start = parentMatcher.end();
+        int depth = 1;
+        boolean quoted = false, escaped = false;
+        int end = -1;
+        for (int i = start; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (quoted) {
+                if (escaped) escaped = false;
+                else if (c == '\\') escaped = true;
+                else if (c == '"') quoted = false;
+                continue;
+            }
+            if (c == '"') quoted = true;
+            else if (c == '{') depth++;
+            else if (c == '}' && --depth == 0) { end = i; break; }
+        }
+        if (end < 0) return null;
+        Matcher field = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*(true|false|null)").matcher(json.substring(start, end));
+        return field.find() ? field.group(1) : null;
+    }
+
+    private static String quoteJson(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
+    }
+
+    private static List<String> jsonArrayObjects(String json, String key) {
+        Matcher array = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*\\[").matcher(json);
+        if (!array.find()) return Collections.emptyList();
+        List<String> objects = new ArrayList<>();
+        int arrayDepth = 1;
+        for (int i = array.end(); i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (Character.isWhitespace(c) || c == ',') continue;
+            if (c == ']') {
+                if (--arrayDepth == 0) break;
+                continue;
+            }
+            if (c != '{') continue;
+
+            int start = i;
+            int objectDepth = 1;
+            boolean quoted = false, escaped = false;
+            for (i++; i < json.length() && objectDepth > 0; i++) {
+                char current = json.charAt(i);
+                if (quoted) {
+                    if (escaped) escaped = false;
+                    else if (current == '\\') escaped = true;
+                    else if (current == '"') quoted = false;
+                } else if (current == '"') {
+                    quoted = true;
+                } else if (current == '{') {
+                    objectDepth++;
+                } else if (current == '}') {
+                    objectDepth--;
+                }
+            }
+            if (objectDepth == 0) objects.add(json.substring(start, i));
+            i--;
+        }
+        return objects;
+    }
+
     private static String youtubeGet(HttpClient client, String path, String token) throws Exception {
         HttpRequest req = HttpRequest.newBuilder().uri(URI.create("https://www.googleapis.com/youtube/v3/" + path))
                 .timeout(Duration.ofSeconds(25)).header("Authorization", "Bearer " + token).GET().build();
         HttpResponse<String> response = client.send(req, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) throw new IOException("YouTube Data API: HTTP " + response.statusCode() + ". Confira se a API está habilitada e se o escopo youtube.readonly foi concedido.");
+        if (response.statusCode() != 200) throw youtubeApiException(response.statusCode(), response.body());
         return response.body();
+    }
+
+    private static IOException youtubeApiException(int status, String body) {
+        String reason = jsonField(body, "reason");
+        String message = jsonField(body, "message");
+        if ("accessNotConfigured".equals(reason) || "SERVICE_DISABLED".equals(reason)) {
+            return new IOException("YouTube Data API v3 não está habilitada no projeto Google Cloud destas credenciais. Ative YouTube Data API v3 em APIs e serviços > Biblioteca e tente novamente.");
+        }
+        if ("insufficientPermissions".equals(reason) || "ACCESS_TOKEN_SCOPE_INSUFFICIENT".equals(reason)) {
+            return new IOException("A sessão não tem permissão para alterar a visibilidade. Desconecte e entre novamente, aceitando a nova permissão do YouTube.");
+        }
+        if ("youtubeSignupRequired".equals(reason)) {
+            return new IOException("Esta conta Google ainda não tem um canal do YouTube configurado.");
+        }
+        if ("quotaExceeded".equals(reason) || "dailyLimitExceeded".equals(reason)) {
+            return new IOException("A cota diária da YouTube Data API deste projeto foi excedida. Tente novamente após a reposição da cota.");
+        }
+        String detail = message == null || message.isBlank() ? "" : " Detalhe do Google: " + message;
+        return new IOException("YouTube Data API retornou HTTP " + status + (reason == null ? "." : " (" + reason + ").") + detail);
     }
     private static String jsonField(String json, String key) {
         Matcher m = Pattern.compile("\\\"" + Pattern.quote(key) + "\\\"\\s*:\\s*\\\"((?:\\\\.|[^\"\\\\])*)\\\"").matcher(json);
@@ -170,13 +303,15 @@ public class GoogleAuthService {
         private final AuthCallback callback;
         private final String expectedState;
         private final String codeVerifier;
+        private final String redirectUri;
 
-        public GoogleOAuthCallbackHandler(String clientId, String clientSecret, AuthCallback callback, String expectedState, String codeVerifier) {
+        public GoogleOAuthCallbackHandler(String clientId, String clientSecret, AuthCallback callback, String expectedState, String codeVerifier, String redirectUri) {
             this.clientId = clientId;
             this.clientSecret = clientSecret;
             this.callback = callback;
             this.expectedState = expectedState;
             this.codeVerifier = codeVerifier;
+            this.redirectUri = redirectUri;
         }
 
         @Override
@@ -216,7 +351,7 @@ public class GoogleAuthService {
             // Processa a troca do código pelo token real em segundo plano
             new Thread(() -> {
                 try {
-                    GoogleUser realUser = trocarCodigoPorUsuarioReal(code, clientId, clientSecret, codeVerifier);
+                    GoogleUser realUser = trocarCodigoPorUsuarioReal(code, clientId, clientSecret, codeVerifier, redirectUri);
                     SwingUtilities.invokeLater(() -> callback.onSuccess(realUser));
                 } catch (Exception ex) {
                     SwingUtilities.invokeLater(() -> callback.onError("Erro ao obter dados reais do Google: " + ex.getMessage()));
@@ -224,7 +359,7 @@ public class GoogleAuthService {
             }).start();
         }
 
-        private GoogleUser trocarCodigoPorUsuarioReal(String code, String clientId, String clientSecret, String codeVerifier) throws Exception {
+        private GoogleUser trocarCodigoPorUsuarioReal(String code, String clientId, String clientSecret, String codeVerifier, String redirectUri) throws Exception {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
                     .build();
@@ -234,7 +369,7 @@ public class GoogleAuthService {
             String formBody = "code=" + URLEncoder.encode(code, StandardCharsets.UTF_8) +
                     "&client_id=" + URLEncoder.encode(clientId, StandardCharsets.UTF_8) +
                     "&client_secret=" + URLEncoder.encode(clientSecret, StandardCharsets.UTF_8) +
-                    "&redirect_uri=" + URLEncoder.encode(REDIRECT_URI, StandardCharsets.UTF_8) +
+                    "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8) +
                     "&grant_type=authorization_code";
             formBody += "&code_verifier=" + URLEncoder.encode(codeVerifier, StandardCharsets.UTF_8);
 
@@ -283,7 +418,7 @@ public class GoogleAuthService {
                         .build();
 
                 HttpResponse<String> ytResponse = client.send(ytRequest, HttpResponse.BodyHandlers.ofString());
-                if (ytResponse.statusCode() != 200) throw new IOException("Falha na YouTube Data API (HTTP " + ytResponse.statusCode() + "). Habilite a API no Google Cloud e confira o escopo youtube.readonly.");
+                if (ytResponse.statusCode() != 200) throw youtubeApiException(ytResponse.statusCode(), ytResponse.body());
                 String ytJson = ytResponse.body();
                 channelTitle = extractNestedJsonString(ytJson, "snippet", "title");
                 String subs = extractNestedJsonString(ytJson, "statistics", "subscriberCount");

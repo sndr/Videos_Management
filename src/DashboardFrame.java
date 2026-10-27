@@ -10,6 +10,8 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.io.File;
 import java.net.URI;
 import java.text.NumberFormat;
@@ -58,7 +60,7 @@ public class DashboardFrame extends JFrame {
 
         initUI();
         recalcularMetricas();
-        carregarVideosDaConta();
+        if (!currentUser.isGuest()) carregarVideosDaConta();
     }
 
     private void inicializarDadosIniciais() {
@@ -143,10 +145,10 @@ public class DashboardFrame extends JFrame {
         lblTitle.setForeground(Color.WHITE);
         brandBox.add(lblTitle, gbc);
 
-        JLabel lblBadge = new JLabel(" ● Conectado ao Google ");
+        JLabel lblBadge = new JLabel(currentUser.isGuest() ? " ● Modo convidado " : " ● Conectado ao Google ");
         lblBadge.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        lblBadge.setForeground(new Color(52, 168, 83));
-        lblBadge.setBackground(new Color(28, 44, 34));
+        lblBadge.setForeground(currentUser.isGuest() ? new Color(245, 190, 92) : new Color(52, 168, 83));
+        lblBadge.setBackground(currentUser.isGuest() ? new Color(55, 45, 28) : new Color(28, 44, 34));
         lblBadge.setOpaque(true);
         lblBadge.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(40, 90, 55), 1, true),
@@ -287,17 +289,17 @@ public class DashboardFrame extends JFrame {
         channelBox.setMaximumSize(new Dimension(200, 90));
         channelBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblTag = new JLabel("CANAL VINCULADO");
+        JLabel lblTag = new JLabel(currentUser.isGuest() ? "MODO DE DESENVOLVIMENTO" : "CANAL VINCULADO");
         lblTag.setFont(new Font("Segoe UI", Font.BOLD, 9));
         lblTag.setForeground(new Color(97, 175, 239));
         lblTag.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblCanal = new JLabel(currentUser.getChannelName());
+        JLabel lblCanal = new JLabel(currentUser.isGuest() ? "Sem conta vinculada" : currentUser.getChannelName());
         lblCanal.setFont(new Font("Segoe UI", Font.BOLD, 13));
         lblCanal.setForeground(Color.WHITE);
         lblCanal.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblSubs = new JLabel(currentUser.getFormattedSubscribers() + " inscritos");
+        JLabel lblSubs = new JLabel(currentUser.isGuest() ? "Dados reais desativados" : currentUser.getFormattedSubscribers() + " inscritos");
         lblSubs.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         lblSubs.setForeground(new Color(152, 195, 121));
         lblSubs.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -799,6 +801,8 @@ public class DashboardFrame extends JFrame {
         cbStatus.setSelectedItem(video.getStatus());
         cbStatus.setMaximumSize(new Dimension(1000, 36));
         cbStatus.setAlignmentX(Component.LEFT_ALIGNMENT);
+        boolean realYouTubeVideo = !currentUser.isGuest() && isYouTubeVideoId(video.getId());
+        cbStatus.setEnabled(!realYouTubeVideo);
 
         JTextField txtUrl = new JTextField(video.getVideoUrl());
         txtUrl.setMaximumSize(new Dimension(1000, 36));
@@ -826,7 +830,7 @@ public class DashboardFrame extends JFrame {
         form.add(txtDuracao);
         form.add(Box.createRigidArea(new Dimension(0, 16)));
 
-        form.add(criarLabelCampo("Status:"));
+        form.add(criarLabelCampo(realYouTubeVideo ? "Visibilidade (altere em Detalhes do vídeo):" : "Status:"));
         form.add(Box.createRigidArea(new Dimension(0, 8)));
         form.add(cbStatus);
         form.add(Box.createRigidArea(new Dimension(0, 16)));
@@ -925,10 +929,11 @@ public class DashboardFrame extends JFrame {
         pnl.setBackground(new Color(36, 40, 48));
         pnl.setBorder(new EmptyBorder(26, 32, 26, 32));
 
-        JLabel lblTitle = new JLabel("<html><h3 style='margin:0; color:#61afef; font-size:16px;'>" + v.getTitle() + "</h3></html>");
+        JLabel lblTitle = new JLabel();
+        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 16));
         lblTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblMeta = new JLabel("<html><b>ID:</b> " + v.getId() + " &nbsp;|&nbsp; <b>Data de Envio:</b> " + v.getUploadDate() +
+        JLabel lblMeta = new JLabel("<html><b>ID:</b> " + v.getId() + "<br/><b>Data de Envio:</b> " + v.getUploadDate() +
                 "<br/><b>Categoria:</b> " + v.getCategory() + " &nbsp;|&nbsp; <b>Duração:</b> " + v.getDuration() +
                 "<br/><b>Status:</b> " + v.getStatus() +
                 "<br/><b>Visualizações:</b> " + v.getFormattedViews() + " &nbsp;|&nbsp; <b>Curtidas:</b> " + v.getFormattedLikes() + "</html>");
@@ -972,9 +977,10 @@ public class DashboardFrame extends JFrame {
         pnl.add(scrollDesc);
         pnl.add(Box.createRigidArea(new Dimension(0, 24)));
 
-        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+        JPanel btnRow = new JPanel();
         btnRow.setOpaque(false);
         btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        btnRow.setMaximumSize(new Dimension(1000, 84));
 
         JButton btnFechar = new JButton("Fechar");
         btnFechar.setPreferredSize(new Dimension(95, 36));
@@ -1003,14 +1009,134 @@ public class DashboardFrame extends JFrame {
             }
         });
 
+        JButton btnVisibilidade = null;
+        if (!currentUser.isGuest() && isYouTubeVideoId(v.getId())) {
+            boolean privado = "Privado".equals(v.getStatus());
+            JButton privacyButton = new JButton(privado ? "Tornar p\u00fablico" : "Tornar privado");
+            btnVisibilidade = privacyButton;
+            privacyButton.setPreferredSize(new Dimension(145, 36));
+            privacyButton.setBackground(privado ? new Color(46, 145, 86) : new Color(177, 92, 55));
+            privacyButton.setForeground(Color.WHITE);
+            privacyButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            privacyButton.addActionListener(e -> alterarPrivacidadeVideo(v, dialog, privacyButton));
+        }
+
+        final JButton visibilityAction = btnVisibilidade;
+        final boolean[] footerStacked = {false};
+        Runnable reorganizarBotoes = () -> {
+            boolean stacked = visibilityAction != null && btnRow.getWidth() < 455;
+            if (stacked == footerStacked[0] && btnRow.getComponentCount() > 0) return;
+            footerStacked[0] = stacked;
+            btnRow.removeAll();
+            if (stacked) {
+                btnRow.setLayout(new GridLayout(2, 1, 0, 8));
+                JPanel privacyRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+                privacyRow.setOpaque(false);
+                privacyRow.add(visibilityAction);
+                JPanel navigationRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+                navigationRow.setOpaque(false);
+                navigationRow.add(btnFechar);
+                navigationRow.add(btnAbrir);
+                btnRow.add(privacyRow);
+                btnRow.add(navigationRow);
+            } else {
+                btnRow.setLayout(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+                if (visibilityAction != null) btnRow.add(visibilityAction);
+                btnRow.add(btnFechar);
+                btnRow.add(btnAbrir);
+            }
+            btnRow.revalidate();
+            btnRow.repaint();
+        };
+        btnRow.addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent event) { reorganizarBotoes.run(); }
+        });
+        btnRow.setLayout(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+        if (visibilityAction != null) btnRow.add(visibilityAction);
         btnRow.add(btnFechar);
         btnRow.add(btnAbrir);
         pnl.add(btnRow);
 
         JScrollPane scrollPnl = new JScrollPane(pnl);
         scrollPnl.setBorder(null);
+        scrollPnl.getViewport().addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent event) {
+                int availableWidth = Math.max(180, scrollPnl.getViewport().getExtentSize().width - 24);
+                String wrappedTitle = wrapHtmlText(v.getTitle(), lblTitle.getFontMetrics(lblTitle.getFont()), availableWidth);
+                lblTitle.setText("<html><div style='font-size:16px; font-weight:bold; color:#61afef;'>" + wrappedTitle + "</div></html>");
+                pnl.setPreferredSize(new Dimension(Math.max(200, scrollPnl.getViewport().getExtentSize().width), pnl.getPreferredSize().height));
+                pnl.revalidate();
+            }
+        });
         dialog.add(scrollPnl, BorderLayout.CENTER);
+        SwingUtilities.invokeLater(reorganizarBotoes);
         dialog.setVisible(true);
+    }
+
+    private static String wrapHtmlText(String text, FontMetrics metrics, int maxWidth) {
+        StringBuilder result = new StringBuilder();
+        int lineWidth = 0;
+        for (String word : text.trim().split("\\s+")) {
+            int wordWidth = metrics.stringWidth(word);
+            int spaceWidth = metrics.charWidth(' ');
+            if (lineWidth > 0 && lineWidth + spaceWidth + wordWidth > maxWidth) {
+                result.append("<br/>");
+                lineWidth = 0;
+            } else if (lineWidth > 0) {
+                result.append(' ');
+                lineWidth += spaceWidth;
+            }
+            result.append(escapeHtml(word));
+            lineWidth += wordWidth;
+        }
+        return result.toString();
+    }
+
+    private static String escapeHtml(String value) {
+        if (value == null) return "";
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;").replace("'", "&#39;");
+    }
+
+    private void alterarPrivacidadeVideo(Video video, JDialog dialog, JButton actionButton) {
+        boolean tornarPublico = "Privado".equals(video.getStatus());
+        String privacyStatus = tornarPublico ? "public" : "private";
+        String destino = tornarPublico ? "público" : "privado";
+        String aviso = tornarPublico
+                ? "Qualquer pessoa poderá encontrar e assistir a este vídeo no YouTube. Deseja torná-lo público?"
+                : "O vídeo deixará de ser acessível publicamente. Deseja torná-lo privado?";
+        int confirm = JOptionPane.showConfirmDialog(dialog, aviso, "Confirmar alteração de visibilidade",
+                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) return;
+
+        actionButton.setEnabled(false);
+        actionButton.setText("Salvando...");
+        new SwingWorker<String, Void>() {
+            @Override protected String doInBackground() throws Exception {
+                return GoogleAuthService.updateVideoPrivacy(currentUser.getToken(), video.getId(), privacyStatus);
+            }
+
+            @Override protected void done() {
+                try {
+                    get();
+                    video.setStatus(tornarPublico ? "Publicado" : "Privado");
+                    atualizarTabela();
+                    recalcularMetricas();
+                    JOptionPane.showMessageDialog(dialog, "O vídeo agora está " + destino + " no YouTube.",
+                            "Visibilidade atualizada", JOptionPane.INFORMATION_MESSAGE);
+                    dialog.dispose();
+                } catch (Exception ex) {
+                    Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+                    JOptionPane.showMessageDialog(dialog, cause.getMessage(), "Não foi possível alterar a visibilidade", JOptionPane.ERROR_MESSAGE);
+                    actionButton.setEnabled(true);
+                    actionButton.setText(tornarPublico ? "Tornar público" : "Tornar privado");
+                }
+            }
+        }.execute();
+    }
+
+    private static boolean isYouTubeVideoId(String id) {
+        return id != null && id.matches("[A-Za-z0-9_-]{11}");
     }
 
     // ==========================================
@@ -1174,14 +1300,16 @@ public class DashboardFrame extends JFrame {
                 new EmptyBorder(26, 32, 26, 32)
         ));
 
-        JLabel lblTitle = new JLabel("📊 Relatório e Performance do Canal");
+        JLabel lblTitle = new JLabel(currentUser.isGuest() ? "Prévia de métricas" : "Relatório e performance do canal");
         lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
         lblTitle.setForeground(Color.WHITE);
         lblTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
         card.add(lblTitle);
         card.add(Box.createRigidArea(new Dimension(0, 8)));
 
-        JLabel lblDesc = new JLabel("<html>Dados consolidados da conta vinculada: <b>" + currentUser.getChannelName() + "</b></html>");
+        JLabel lblDesc = new JLabel(currentUser.isGuest()
+                ? "<html>Modo convidado: conecte uma conta Google para carregar métricas reais do canal.</html>"
+                : "<html>Dados consolidados da conta vinculada: <b>" + currentUser.getChannelName() + "</b></html>");
         lblDesc.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         lblDesc.setForeground(new Color(165, 175, 190));
         lblDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -1190,20 +1318,38 @@ public class DashboardFrame extends JFrame {
 
         JPanel statsGrid = new JPanel(new GridLayout(2, 2, 18, 18));
         statsGrid.setOpaque(false);
-        statsGrid.setMaximumSize(new Dimension(800, 170));
+        statsGrid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 250));
         statsGrid.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         long views = videoList.stream().mapToLong(Video::getViews).sum();
         long likes = videoList.stream().mapToLong(Video::getLikes).sum();
         String average = videoList.isEmpty() ? "—" : NumberFormat.getInstance(Locale.forLanguageTag("pt-BR")).format(views / videoList.size());
         String engagement = views == 0 ? "—" : String.format(Locale.forLanguageTag("pt-BR"), "%.1f%%", likes * 100.0 / views);
-        statsGrid.add(criarBlocoAnalytics("Vídeos carregados do canal", String.valueOf(videoList.size()), "YouTube Data API", new Color(46, 204, 113)));
-        statsGrid.add(criarBlocoAnalytics("Média de visualizações", average, "Com base nos vídeos carregados", new Color(74, 144, 226)));
-        statsGrid.add(criarBlocoAnalytics("Curtidas / visualizações", engagement, "Com base nos dados disponíveis", new Color(155, 89, 182)));
-        statsGrid.add(criarBlocoAnalytics("Inscritos do canal", currentUser.getFormattedSubscribers(), "YouTube Data API", new Color(243, 156, 18)));
+        String dataSource = currentUser.isGuest() ? "Disponível após conectar o YouTube" : "YouTube Data API";
+        statsGrid.add(criarBlocoAnalytics(currentUser.isGuest() ? "Vídeos nesta sessão" : "Vídeos carregados do canal", String.valueOf(videoList.size()),
+                currentUser.isGuest() ? "Sem dados de demonstração" : dataSource, new Color(46, 204, 113)));
+        statsGrid.add(criarBlocoAnalytics("Média de visualizações", average,
+                currentUser.isGuest() ? dataSource : "Com base nos vídeos carregados", new Color(74, 144, 226)));
+        statsGrid.add(criarBlocoAnalytics("Curtidas / visualizações", engagement,
+                currentUser.isGuest() ? dataSource : "Com base nos dados disponíveis", new Color(155, 89, 182)));
+        statsGrid.add(criarBlocoAnalytics("Inscritos do canal", currentUser.getFormattedSubscribers(), dataSource, new Color(243, 156, 18)));
 
         card.add(statsGrid);
-        panel.add(card, BorderLayout.CENTER);
+        statsGrid.addComponentListener(new java.awt.event.ComponentAdapter() {
+            private int columns = 2;
+            @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                int width = statsGrid.getWidth();
+                int nextColumns = width >= 1120 ? 4 : width >= 620 ? 2 : 1;
+                if (nextColumns != columns) {
+                    columns = nextColumns;
+                    statsGrid.setLayout(new GridLayout(0, columns, 18, 18));
+                    int rows = (4 + columns - 1) / columns;
+                    statsGrid.setMaximumSize(new Dimension(Integer.MAX_VALUE, rows * 116 + (rows - 1) * 18));
+                    statsGrid.revalidate();
+                }
+            }
+        });
+        panel.add(card, BorderLayout.NORTH);
         return panel;
     }
 
@@ -1215,6 +1361,8 @@ public class DashboardFrame extends JFrame {
                 BorderFactory.createMatteBorder(0, 4, 0, 0, cor),
                 new EmptyBorder(14, 16, 14, 16)
         ));
+        b.setMinimumSize(new Dimension(190, 116));
+        b.setPreferredSize(new Dimension(260, 116));
 
         JLabel l1 = new JLabel(titulo);
         l1.setFont(new Font("Segoe UI", Font.PLAIN, 11));
@@ -1271,9 +1419,9 @@ public class DashboardFrame extends JFrame {
         adicionarLinhaConfig(infoGrid, 0, "Nome do Usuário Google:", currentUser.getName());
         adicionarLinhaConfig(infoGrid, 1, "E-mail Google:", currentUser.getEmail());
         adicionarLinhaConfig(infoGrid, 2, "Canal Conectado:", currentUser.getChannelName());
-        adicionarLinhaConfig(infoGrid, 3, "Token OAuth:", "Armazenado localmente até expirar (aprox. 55 min)");
-        adicionarLinhaConfig(infoGrid, 4, "Arquivo de Sessão Local:", SessionManager.getSessionFilePath());
-        adicionarLinhaConfig(infoGrid, 5, "Status da Sessão:", "● Ativo & Autenticado (OAuth 2.0)");
+        adicionarLinhaConfig(infoGrid, 3, "Token OAuth:", currentUser.isGuest() ? "Não utilizado nesta sessão" : "Armazenado localmente até expirar (aprox. 55 min)");
+        adicionarLinhaConfig(infoGrid, 4, "Arquivo de Sessão Local:", currentUser.isGuest() ? "Sessão convidado não persistida" : SessionManager.getSessionFilePath());
+        adicionarLinhaConfig(infoGrid, 5, "Status da Sessão:", currentUser.isGuest() ? "Modo convidado (sem conexão Google)" : "● Ativo & Autenticado (OAuth 2.0)");
 
         card.add(infoGrid);
         card.add(Box.createRigidArea(new Dimension(0, 28)));
@@ -1295,7 +1443,7 @@ public class DashboardFrame extends JFrame {
         btnLimparSessao.setBackground(new Color(224, 108, 117));
         btnLimparSessao.setForeground(Color.WHITE);
         btnLimparSessao.addActionListener(e -> {
-            SessionManager.clearSession();
+            if (!currentUser.isGuest()) SessionManager.clearSession();
             logout();
         });
 
@@ -1342,7 +1490,7 @@ public class DashboardFrame extends JFrame {
                 JOptionPane.YES_NO_OPTION);
 
         if (resp == JOptionPane.YES_OPTION) {
-            SessionManager.clearSession();
+            if (!currentUser.isGuest()) SessionManager.clearSession();
             GoogleAuthService.stopServer();
             dispose();
             SwingUtilities.invokeLater(() -> new LoginFrame().setVisible(true));

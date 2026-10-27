@@ -19,6 +19,7 @@ public class SessionManager {
      * Salva a sessão do usuário com token criptográfico e timestamp de expiração (cookie de sessão).
      */
     public static void saveSession(GoogleUser user, boolean rememberMe) {
+        if (user.isGuest()) return;
         if (!rememberMe) {
             clearSession();
             return;

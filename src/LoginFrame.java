@@ -32,20 +32,40 @@ public class LoginFrame extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         // Janela redimensionável com o mouse e com tamanho mínimo seguro
-        setSize(960, 700);
-        setMinimumSize(new Dimension(840, 580));
+        setSize(1120, 760);
+        setMinimumSize(new Dimension(560, 540));
         setResizable(true);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
         // Divisão principal: Esquerda (Apresentação / Hero) | Direita (Autenticação)
         JPanel mainSplit = new JPanel(new BorderLayout());
-        mainSplit.setBackground(new Color(24, 27, 34));
-
-        mainSplit.add(criarPainelApresentacao(), BorderLayout.WEST);
-        mainSplit.add(criarPainelAutenticacao(), BorderLayout.CENTER);
+        mainSplit.setBackground(new Color(13, 18, 30));
+        JComponent presentation = criarPainelApresentacao();
+        JComponent authentication = criarPainelAutenticacao();
+        mainSplit.add(presentation, BorderLayout.WEST);
+        mainSplit.add(authentication, BorderLayout.CENTER);
 
         add(mainSplit, BorderLayout.CENTER);
+        addComponentListener(new java.awt.event.ComponentAdapter() {
+            private boolean compact;
+            @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                boolean shouldCollapse = getWidth() < 900;
+                if (shouldCollapse != compact) {
+                    compact = shouldCollapse;
+                    if (compact) mainSplit.remove(presentation);
+                    else mainSplit.add(presentation, BorderLayout.WEST);
+                    mainSplit.revalidate();
+                }
+                if (!compact) {
+                    Dimension target = new Dimension(Math.max(320, (int) (getWidth() * 0.38)), Math.max(1, getHeight()));
+                    if (!target.equals(presentation.getPreferredSize())) {
+                        presentation.setPreferredSize(target);
+                        mainSplit.revalidate();
+                    }
+                }
+            }
+        });
     }
 
     // ==========================================
@@ -61,24 +81,28 @@ public class LoginFrame extends JFrame {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
                 GradientPaint gp = new GradientPaint(
-                        0, 0, new Color(17, 21, 29),
-                        getWidth(), getHeight(), new Color(26, 33, 46)
+                        0, 0, new Color(12, 19, 35),
+                        getWidth(), getHeight(), new Color(24, 42, 72)
                 );
                 g2.setPaint(gp);
                 g2.fillRect(0, 0, getWidth(), getHeight());
 
-                g2.setColor(new Color(45, 52, 65));
+                g2.setColor(new Color(51, 78, 119));
                 g2.drawLine(getWidth() - 1, 0, getWidth() - 1, getHeight());
+                g2.setColor(new Color(54, 118, 202, 36));
+                g2.fillOval(getWidth() - 240, 90, 320, 320);
+                g2.setColor(new Color(70, 190, 190, 24));
+                g2.fillOval(getWidth() - 170, 155, 180, 180);
                 g2.dispose();
             }
         };
 
-        heroPanel.setPreferredSize(new Dimension(360, 700));
+        heroPanel.setPreferredSize(new Dimension(420, 700));
         heroPanel.setLayout(new BoxLayout(heroPanel, BoxLayout.Y_AXIS));
-        heroPanel.setBorder(new EmptyBorder(44, 38, 44, 38));
+        heroPanel.setBorder(new EmptyBorder(48, 42, 40, 42));
 
         // 1. Badge superior
-        JLabel lblTag = new JLabel("✦ STUDIO SUITE 2026");
+        JLabel lblTag = new JLabel("YOUTUBE CREATOR STUDIO");
         lblTag.setFont(new Font("Segoe UI", Font.BOLD, 10));
         lblTag.setForeground(new Color(97, 175, 239));
         lblTag.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -91,13 +115,13 @@ public class LoginFrame extends JFrame {
         lblLogo.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel lblTitle = new JLabel("Videos Management");
-        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 29));
         lblTitle.setForeground(Color.WHITE);
         lblTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblSubtitle = new JLabel("<html>Central profissional para criadores gerenciarem catálogos de vídeos e métricas em tempo real.</html>");
-        lblSubtitle.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        lblSubtitle.setForeground(new Color(155, 165, 180));
+        JLabel lblSubtitle = new JLabel("<html><div style='width:260px'>Acesse seu canal e seus vídeos do YouTube em um só lugar.</div></html>");
+        lblSubtitle.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        lblSubtitle.setForeground(new Color(185, 197, 216));
         lblSubtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         heroPanel.add(lblLogo);
@@ -105,24 +129,24 @@ public class LoginFrame extends JFrame {
         heroPanel.add(lblTitle);
         heroPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         heroPanel.add(lblSubtitle);
-        heroPanel.add(Box.createRigidArea(new Dimension(0, 32)));
+        heroPanel.add(Box.createRigidArea(new Dimension(0, 38)));
 
         // 3. Recursos em Destaque com respiro generoso
         heroPanel.add(criarItemDestaque("⚡", "Autenticação Real Google OAuth 2.0", "Conexão oficial e direta com accounts.google.com."));
-        heroPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        heroPanel.add(Box.createRigidArea(new Dimension(0, 16)));
         heroPanel.add(criarItemDestaque("📊", "YouTube Data API v3 Integrada", "Consulta inscritos, dados do canal e métricas do catálogo."));
-        heroPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        heroPanel.add(Box.createRigidArea(new Dimension(0, 16)));
         heroPanel.add(criarItemDestaque("📁", "Gestão de Publicações & Uploads", "Organize status, links, durações e arquivos em lote."));
 
         heroPanel.add(Box.createVerticalGlue());
 
         // 4. Rodapé
-        JLabel lblFooterEndorsement = new JLabel("<html><span style='color: #61afef;'>✓</span> Segurança garantida por criptografia OAuth 2.0</html>");
+        JLabel lblFooterEndorsement = new JLabel("<html><span style='color: #61afef;'>●</span> Conexão oficial com sua conta Google</html>");
         lblFooterEndorsement.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         lblFooterEndorsement.setForeground(new Color(140, 150, 165));
         lblFooterEndorsement.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblVersion = new JLabel("Versão 2.4 Desktop • Conexão Google Cloud");
+        JLabel lblVersion = new JLabel("Seus dados vêm do YouTube Data API");
         lblVersion.setFont(new Font("Segoe UI", Font.PLAIN, 10));
         lblVersion.setForeground(new Color(90, 100, 115));
         lblVersion.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -175,7 +199,8 @@ public class LoginFrame extends JFrame {
     // ==========================================
     private JComponent criarPainelAutenticacao() {
         JPanel rightWrapper = new JPanel(new GridBagLayout());
-        rightWrapper.setBackground(new Color(28, 31, 38));
+        rightWrapper.setBackground(new Color(13, 18, 30));
+        rightWrapper.setBorder(new EmptyBorder(28, 28, 28, 28));
 
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
@@ -183,27 +208,27 @@ public class LoginFrame extends JFrame {
         gbc.weightx = 1.0;
         gbc.weighty = 1.0;
         gbc.anchor = GridBagConstraints.CENTER;
-        gbc.fill = GridBagConstraints.NONE;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
 
         JPanel authCard = new JPanel();
         authCard.setLayout(new BoxLayout(authCard, BoxLayout.Y_AXIS));
-        authCard.setBackground(new Color(33, 37, 46));
+        authCard.setBackground(new Color(25, 33, 48));
         authCard.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(48, 54, 66), 1, true),
-                new EmptyBorder(34, 38, 34, 38)
+                BorderFactory.createLineBorder(new Color(52, 66, 89), 1, true),
+                new EmptyBorder(36, 38, 36, 38)
         ));
-        authCard.setPreferredSize(new Dimension(470, 610));
-        authCard.setMaximumSize(new Dimension(500, 630));
+        authCard.setMinimumSize(new Dimension(0, 0));
+        authCard.setMaximumSize(new Dimension(540, Integer.MAX_VALUE));
 
         // Título e Boas-vindas com gap generoso
-        JLabel lblWelcome = new JLabel("Entrar com o Google");
-        lblWelcome.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        JLabel lblWelcome = new JLabel("Conecte sua conta");
+        lblWelcome.setFont(new Font("Segoe UI", Font.BOLD, 25));
         lblWelcome.setForeground(Color.WHITE);
         lblWelcome.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel lblWelcomeSub = new JLabel("Autenticação real via Google Cloud OAuth 2.0");
-        lblWelcomeSub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        lblWelcomeSub.setForeground(new Color(155, 165, 180));
+        JLabel lblWelcomeSub = new JLabel("Acesse os vídeos vinculados ao seu canal do YouTube.");
+        lblWelcomeSub.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        lblWelcomeSub.setForeground(new Color(164, 176, 198));
         lblWelcomeSub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         authCard.add(lblWelcome);
@@ -213,9 +238,9 @@ public class LoginFrame extends JFrame {
 
         // Card de Sessão Anterior (se existir)
         savedSessionCard = new JPanel(new BorderLayout(12, 0));
-        savedSessionCard.setBackground(new Color(38, 47, 60));
+        savedSessionCard.setBackground(new Color(28, 45, 69));
         savedSessionCard.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(66, 133, 244), 1, true),
+                BorderFactory.createLineBorder(new Color(67, 135, 230), 1, true),
                 new EmptyBorder(10, 14, 10, 14)
         ));
         savedSessionCard.setMaximumSize(new Dimension(400, 56));
@@ -225,18 +250,18 @@ public class LoginFrame extends JFrame {
         authCard.add(Box.createRigidArea(new Dimension(0, 16)));
 
         // Botão Oficial Google (Design limpo, alto contraste e sombra suave)
-        btnGoogleBrowser = new JButton("  Continuar com o Google (Oficial)", new GoogleIcon(22));
+        btnGoogleBrowser = new JButton("  Continuar com o Google", new GoogleIcon(22));
         btnGoogleBrowser.setFont(new Font("Segoe UI", Font.BOLD, 13));
         btnGoogleBrowser.setForeground(new Color(32, 33, 36));
         btnGoogleBrowser.setBackground(Color.WHITE);
         btnGoogleBrowser.setFocusPainted(false);
         btnGoogleBrowser.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btnGoogleBrowser.setMaximumSize(new Dimension(400, 46));
-        btnGoogleBrowser.setPreferredSize(new Dimension(400, 46));
+        btnGoogleBrowser.setMaximumSize(new Dimension(440, 50));
+        btnGoogleBrowser.setPreferredSize(new Dimension(400, 50));
         btnGoogleBrowser.setAlignmentX(Component.CENTER_ALIGNMENT);
         btnGoogleBrowser.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(218, 220, 224), 1, true),
-                new EmptyBorder(8, 16, 8, 16)
+                BorderFactory.createLineBorder(new Color(220, 226, 235), 1, true),
+                new EmptyBorder(10, 16, 10, 16)
         ));
         btnGoogleBrowser.addActionListener(e -> iniciarLoginGoogleReal());
 
@@ -254,6 +279,30 @@ public class LoginFrame extends JFrame {
         authCard.add(btnGoogleBrowser);
         authCard.add(Box.createRigidArea(new Dimension(0, 12)));
 
+        JButton btnGuest = new JButton("Entrar como convidado · desenvolvimento");
+        btnGuest.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnGuest.setForeground(new Color(188, 202, 222));
+        btnGuest.setBackground(new Color(31, 42, 60));
+        btnGuest.setFocusPainted(false);
+        btnGuest.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnGuest.setMaximumSize(new Dimension(440, 44));
+        btnGuest.setPreferredSize(new Dimension(400, 44));
+        btnGuest.setAlignmentX(Component.CENTER_ALIGNMENT);
+        btnGuest.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(66, 83, 108), 1, true),
+                new EmptyBorder(9, 14, 9, 14)
+        ));
+        btnGuest.addActionListener(e -> efetuarLogin(GoogleUser.createGuest()));
+        authCard.add(btnGuest);
+        authCard.add(Box.createRigidArea(new Dimension(0, 6)));
+
+        JLabel lblGuestHint = new JLabel("<html><div style='text-align:center'>Acesso local sem Google; vídeos reais não serão carregados.</div></html>");
+        lblGuestHint.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        lblGuestHint.setForeground(new Color(139, 153, 174));
+        lblGuestHint.setAlignmentX(Component.CENTER_ALIGNMENT);
+        authCard.add(lblGuestHint);
+        authCard.add(Box.createRigidArea(new Dimension(0, 10)));
+
         // Link para Configurar ou Alterar Credenciais do Google Cloud com gap adequado
         JButton btnConfigOAuth = new JButton("⚙️ Configurar Credenciais do Google Cloud Console");
         btnConfigOAuth.setFont(new Font("Segoe UI", Font.PLAIN, 11));
@@ -267,10 +316,8 @@ public class LoginFrame extends JFrame {
         authCard.add(btnConfigOAuth);
         authCard.add(Box.createRigidArea(new Dimension(0, 18)));
 
-        authCard.add(Box.createRigidArea(new Dimension(0, 14)));
-
         // Checkbox de sessão persistente com gap adequado
-        chkSalvarSessao = new JCheckBox("Lembrar desta sessão (Salvar token localmente)", true);
+        chkSalvarSessao = new JCheckBox("Lembrar login Google (salvar token localmente)", true);
         chkSalvarSessao.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         chkSalvarSessao.setForeground(new Color(175, 185, 200));
         chkSalvarSessao.setOpaque(false);
@@ -283,7 +330,7 @@ public class LoginFrame extends JFrame {
         progressBar = new JProgressBar();
         progressBar.setIndeterminate(true);
         progressBar.setVisible(false);
-        progressBar.setMaximumSize(new Dimension(400, 4));
+        progressBar.setMaximumSize(new Dimension(440, 4));
         progressBar.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         lblStatus = new JLabel("Pronto para autenticar.");
@@ -299,6 +346,8 @@ public class LoginFrame extends JFrame {
 
         JScrollPane scroll = new JScrollPane(rightWrapper);
         scroll.setBorder(null);
+        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
         scroll.getVerticalScrollBar().setUnitIncrement(14);
         return scroll;
     }
@@ -521,47 +570,109 @@ public class LoginFrame extends JFrame {
      */
     private void abrirDialogConfiguracaoOAuth(boolean autoExecutarAposSalvar) {
         JDialog dialog = new JDialog(this, "Credenciais do Google Cloud OAuth 2.0 Real", true);
-        dialog.setSize(560, 520);
-        dialog.setMinimumSize(new Dimension(460, 420));
-        dialog.setResizable(true); // Redimensionável com o mouse!
+        Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
+        int dialogWidth = Math.min(640, Math.max(360, screen.width - 64));
+        int dialogHeight = Math.min(680, Math.max(480, screen.height - 96));
+        dialog.setSize(dialogWidth, dialogHeight);
+        dialog.setMinimumSize(new Dimension(Math.min(420, dialogWidth), Math.min(480, dialogHeight)));
+        dialog.setResizable(true);
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new BorderLayout());
 
-        JPanel pnl = new JPanel();
-        pnl.setLayout(new BoxLayout(pnl, BoxLayout.Y_AXIS));
-        pnl.setBackground(new Color(33, 37, 46));
-        pnl.setBorder(new EmptyBorder(26, 32, 26, 32));
+        JPanel root = new JPanel(new BorderLayout(0, 18));
+        root.setBackground(new Color(23, 30, 43));
+        root.setBorder(new EmptyBorder(26, 30, 24, 30));
 
-        JLabel lblTit = new JLabel("Configuração Google Cloud OAuth 2.0");
-        lblTit.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        JPanel header = new JPanel();
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+        header.setOpaque(false);
+        JLabel lblTit = new JLabel("Conectar ao Google Cloud");
+        lblTit.setFont(new Font("Segoe UI", Font.BOLD, 22));
         lblTit.setForeground(Color.WHITE);
         lblTit.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        JLabel lblDesc = new JLabel("<html>Para autenticar com contas reais do Google, configure seu <b>Client ID</b> e <b>Client Secret</b> gerados no Google Cloud Console.<br/><br/>" +
-                "URI de Redirecionamento oficial: <b style='color:#61afef;'>http://127.0.0.1:8989/oauth2callback</b></html>");
-        lblDesc.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        lblDesc.setForeground(new Color(165, 175, 190));
+        JTextArea lblDesc = new JTextArea("Configure uma vez um cliente OAuth do tipo Desktop app no Google Cloud e importe o JSON para ativar o login.");
+        lblDesc.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        lblDesc.setForeground(new Color(174, 185, 202));
+        lblDesc.setOpaque(false);
+        lblDesc.setEditable(false);
+        lblDesc.setFocusable(false);
+        lblDesc.setLineWrap(true);
+        lblDesc.setWrapStyleWord(true);
+        lblDesc.setRows(2);
+        lblDesc.setColumns(42);
         lblDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
+        header.add(lblTit);
+        header.add(Box.createRigidArea(new Dimension(0, 8)));
+        header.add(lblDesc);
+        root.add(header, BorderLayout.NORTH);
 
-        pnl.add(lblTit);
-        pnl.add(Box.createRigidArea(new Dimension(0, 10)));
-        pnl.add(lblDesc);
-        pnl.add(Box.createRigidArea(new Dimension(0, 20)));
+        JPanel fields = new JPanel(new GridBagLayout());
+        fields.setOpaque(true);
+        fields.setBackground(new Color(23, 30, 43));
+        GridBagConstraints fieldConstraints = new GridBagConstraints();
+        fieldConstraints.gridx = 0;
+        fieldConstraints.gridwidth = 2;
+        fieldConstraints.weightx = 1;
+        fieldConstraints.fill = GridBagConstraints.HORIZONTAL;
+        fieldConstraints.anchor = GridBagConstraints.NORTHWEST;
+        fieldConstraints.insets = new Insets(0, 0, 14, 0);
 
-        JButton btnImportar = new JButton("📁 Importar arquivo client_secret_*.json do Google");
+        JButton btnImportar = new JButton("Importar credenciais JSON do Google Cloud");
         btnImportar.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        btnImportar.setBackground(new Color(45, 52, 65));
-        btnImportar.setForeground(new Color(97, 175, 239));
-        btnImportar.setMaximumSize(new Dimension(1000, 38));
+        btnImportar.setBackground(new Color(38, 52, 73));
+        btnImportar.setForeground(new Color(132, 190, 255));
+        btnImportar.setFocusPainted(false);
+        btnImportar.setPreferredSize(new Dimension(0, 42));
         btnImportar.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JTextField txtClientId = new JTextField(GoogleCredentialsManager.getClientId());
-        txtClientId.setMaximumSize(new Dimension(1000, 35));
-        txtClientId.setAlignmentX(Component.LEFT_ALIGNMENT);
+        txtClientId.setPreferredSize(new Dimension(300, 40));
+        txtClientId.putClientProperty("JTextField.placeholderText", "Ex.: 123456789.apps.googleusercontent.com");
 
         JPasswordField txtClientSecret = new JPasswordField(GoogleCredentialsManager.getClientSecret());
-        txtClientSecret.setMaximumSize(new Dimension(1000, 35));
-        txtClientSecret.setAlignmentX(Component.LEFT_ALIGNMENT);
+        txtClientSecret.setPreferredSize(new Dimension(300, 40));
+        txtClientSecret.putClientProperty("JTextField.placeholderText", "Client Secret");
+
+        JLabel lblCId = new JLabel("Client ID");
+        JLabel lblCSecret = new JLabel("Client Secret");
+        for (JLabel label : new JLabel[]{lblCId, lblCSecret}) {
+            label.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            label.setForeground(new Color(198, 208, 224));
+        }
+
+        JTextArea redirectInfo = new JTextArea("Aplicativo para computador (Desktop app)\nO retorno usa 127.0.0.1 em uma porta local temporária.");
+        redirectInfo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        redirectInfo.setForeground(new Color(156, 181, 215));
+        redirectInfo.setOpaque(true);
+        redirectInfo.setBackground(new Color(29, 40, 57));
+        redirectInfo.setBorder(new EmptyBorder(12, 14, 12, 14));
+        redirectInfo.setEditable(false);
+        redirectInfo.setFocusable(false);
+        redirectInfo.setLineWrap(true);
+        redirectInfo.setWrapStyleWord(true);
+        redirectInfo.setRows(2);
+
+        fieldConstraints.gridy = 0;
+        fields.add(btnImportar, fieldConstraints);
+        fieldConstraints.gridy = 1;
+        fields.add(lblCId, fieldConstraints);
+        fieldConstraints.gridy = 2;
+        fields.add(txtClientId, fieldConstraints);
+        fieldConstraints.gridy = 3;
+        fields.add(lblCSecret, fieldConstraints);
+        fieldConstraints.gridy = 4;
+        fields.add(txtClientSecret, fieldConstraints);
+        fieldConstraints.gridy = 5;
+        fieldConstraints.insets = new Insets(8, 0, 0, 0);
+        fields.add(redirectInfo, fieldConstraints);
+        JScrollPane fieldsScroll = new JScrollPane(fields);
+        fieldsScroll.setBorder(null);
+        fieldsScroll.setBackground(new Color(23, 30, 43));
+        fieldsScroll.getViewport().setBackground(new Color(23, 30, 43));
+        fieldsScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        fieldsScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+        fieldsScroll.getVerticalScrollBar().setUnitIncrement(14);
+        root.add(fieldsScroll, BorderLayout.CENTER);
 
         btnImportar.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser();
@@ -574,7 +685,7 @@ public class LoginFrame extends JFrame {
                     if (ok) {
                         txtClientId.setText(GoogleCredentialsManager.getClientId());
                         txtClientSecret.setText(GoogleCredentialsManager.getClientSecret());
-                        JOptionPane.showMessageDialog(dialog, "Credenciais importadas com sucesso!", "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+                        JOptionPane.showMessageDialog(dialog, "Credenciais importadas com sucesso!", "Importação concluída", JOptionPane.INFORMATION_MESSAGE);
                     } else {
                         JOptionPane.showMessageDialog(dialog, "Não foi possível encontrar client_id e client_secret no arquivo.", "Aviso", JOptionPane.WARNING_MESSAGE);
                     }
@@ -584,40 +695,15 @@ public class LoginFrame extends JFrame {
             }
         });
 
-        pnl.add(btnImportar);
-        pnl.add(Box.createRigidArea(new Dimension(0, 16)));
-
-        JLabel lblCId = new JLabel("Client ID:");
-        lblCId.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        lblCId.setForeground(new Color(180, 190, 205));
-        lblCId.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        JLabel lblCSecret = new JLabel("Client Secret:");
-        lblCSecret.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        lblCSecret.setForeground(new Color(180, 190, 205));
-        lblCSecret.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        // Inserção com gap de 8px entre labels e campos
-        pnl.add(lblCId);
-        pnl.add(Box.createRigidArea(new Dimension(0, 8)));
-        pnl.add(txtClientId);
-        pnl.add(Box.createRigidArea(new Dimension(0, 14)));
-
-        pnl.add(lblCSecret);
-        pnl.add(Box.createRigidArea(new Dimension(0, 8)));
-        pnl.add(txtClientSecret);
-        pnl.add(Box.createRigidArea(new Dimension(0, 24)));
-
         JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
         btnRow.setOpaque(false);
-        btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JButton btnCancelar = new JButton("Cancelar");
-        btnCancelar.setPreferredSize(new Dimension(100, 36));
+        btnCancelar.setPreferredSize(new Dimension(110, 40));
         btnCancelar.addActionListener(e -> dialog.dispose());
 
         JButton btnSalvar = new JButton("Salvar e Prosseguir");
-        btnSalvar.setPreferredSize(new Dimension(160, 36));
+        btnSalvar.setPreferredSize(new Dimension(180, 40));
         btnSalvar.setBackground(new Color(66, 133, 244));
         btnSalvar.setForeground(Color.WHITE);
         btnSalvar.setFont(new Font("Segoe UI", Font.BOLD, 12));
@@ -645,18 +731,20 @@ public class LoginFrame extends JFrame {
 
         btnRow.add(btnCancelar);
         btnRow.add(btnSalvar);
-        pnl.add(btnRow);
-
-        JScrollPane scrollDialog = new JScrollPane(pnl);
-        scrollDialog.setBorder(null);
-        dialog.add(scrollDialog, BorderLayout.CENTER);
+        root.add(btnRow, BorderLayout.SOUTH);
+        dialog.add(root, BorderLayout.CENTER);
         dialog.setVisible(true);
     }
 
     private void efetuarLogin(GoogleUser user) {
         progressBar.setVisible(true);
-        lblStatus.setText("✓ Autenticado com sucesso como " + user.getName() + "! Abrindo Dashboard...");
-        lblStatus.setForeground(new Color(152, 195, 121));
+        if (user.isGuest()) {
+            lblStatus.setText("Modo convidado de desenvolvimento. Abrindo o dashboard...");
+            lblStatus.setForeground(new Color(245, 190, 92));
+        } else {
+            lblStatus.setText("✓ Autenticado com sucesso como " + user.getName() + "! Abrindo Dashboard...");
+            lblStatus.setForeground(new Color(152, 195, 121));
+        }
 
         boolean lembrar = chkSalvarSessao.isSelected();
         SessionManager.saveSession(user, lembrar);

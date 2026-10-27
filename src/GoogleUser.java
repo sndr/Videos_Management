@@ -2,6 +2,7 @@
  * Representa um usuário autenticado via Google.
  */
 public class GoogleUser {
+    private static final String GUEST_TOKEN = "guest";
     private final String name;
     private final String email;
     private final String channelName;
@@ -14,6 +15,14 @@ public class GoogleUser {
         this.channelName = channelName;
         this.subscribers = subscribers;
         this.token = token;
+    }
+
+    public static GoogleUser createGuest() {
+        return new GoogleUser("Visitante", "Sessão local de desenvolvimento", "Sem canal conectado", -1, GUEST_TOKEN);
+    }
+
+    public boolean isGuest() {
+        return GUEST_TOKEN.equals(token);
     }
 
     public String getName() {

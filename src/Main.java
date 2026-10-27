@@ -4,9 +4,8 @@ import javax.swing.*;
 
 /**
  * Ponto de entrada principal da aplicação Videos Management.
- * Inicializa o tema FlatDarkLaf e verifica a existência de cookies/tokens de sessão:
- * - Se houver sessão ativa válida: entra diretamente no Dashboard.
- * - Se não houver sessão/token: exibe a tela de login ampliada e configurável.
+ * Inicializa o tema FlatDarkLaf e abre a tela de entrada. A tela oferece
+ * login Google, retomada de sessão salva ou acesso convidado para desenvolvimento.
  */
 public class Main {
     public static void main(String[] args) {
@@ -17,20 +16,7 @@ public class Main {
             System.err.println("Falha ao inicializar Look and Feel FlatDarkLaf: " + ex.getMessage());
         }
 
-        // Verifica token/cookie de sessão persistido
-        GoogleUser savedUser = SessionManager.loadSession();
-
-        SwingUtilities.invokeLater(() -> {
-            if (savedUser != null) {
-                // Sessão existente e válida: abre o Dashboard diretamente
-                DashboardFrame dashboard = new DashboardFrame(savedUser);
-                dashboard.setVisible(true);
-            } else {
-                // Sem sessão ou token expirado: abre a janela de Login
-                LoginFrame login = new LoginFrame();
-                login.setVisible(true);
-            }
-        });
+        SwingUtilities.invokeLater(() -> new LoginFrame().setVisible(true));
     }
 }
 

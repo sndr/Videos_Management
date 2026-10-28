@@ -12,7 +12,7 @@ import java.util.prefs.Preferences;
 /** Local video trimmer backed by FFmpeg. It never downloads videos from YouTube. */
 public class ClipEditorPanel extends JPanel {
     private static final long serialVersionUID = 1L;
-    private static final int MAX_CLIP_SECONDS = 5 * 60;
+    private static final int MAX_VIDEO_SECONDS = 10 * 60;
     private static final String PREF_FFMPEG = "ffmpeg.executable";
 
     private final JFrame owner;
@@ -27,7 +27,7 @@ public class ClipEditorPanel extends JPanel {
     private final JLabel ffmpegLabel = new JLabel();
     private volatile Process currentProcess;
     private volatile boolean cancellationRequested;
-    private SwingWorker<Integer, Integer> worker;
+    private SwingWorker<MediaInfo, Integer> worker;
     private File sourceFile;
     private File outputFile;
 
@@ -81,10 +81,10 @@ public class ClipEditorPanel extends JPanel {
         qualityInfo.setLayout(new BoxLayout(qualityInfo, BoxLayout.Y_AXIS));
         qualityInfo.setBackground(new Color(31, 42, 60));
         qualityInfo.setBorder(new EmptyBorder(14, 16, 14, 16));
-        JLabel qualityTitle = new JLabel("Exportação H.264 · CRF 18 · áudio AAC 192 kb/s");
+        JLabel qualityTitle = new JLabel("Resolução original · H.264 CRF 18 · áudio AAC 192 kb/s");
         qualityTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
         qualityTitle.setForeground(new Color(195, 215, 242));
-        JLabel qualityDescription = new JLabel("Recodificação de alta qualidade para cortes precisos. O arquivo original não é alterado.");
+        JLabel qualityDescription = new JLabel("Mantém as dimensões do vídeo fonte sem ampliar vídeos pequenos. O arquivo original não é alterado.");
         qualityDescription.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         qualityDescription.setForeground(new Color(165, 180, 202));
         qualityInfo.add(qualityTitle);
@@ -191,7 +191,7 @@ public class ClipEditorPanel extends JPanel {
             outputFile = new File(sourceFile.getParentFile(), name + "_clipe.mp4");
             outputField.setText(outputFile.getAbsolutePath());
         }
-        setStatus("Arquivo selecionado. Escolha os tempos de início e fim para um trecho de até 5 minutos.", false);
+        setStatus("Arquivo selecionado. A duração total deve ser de até 10 minutos. O editor verifica duração e resolução antes de exportar.", false);
     }
 
     private void chooseOutput() {
@@ -220,17 +220,16 @@ public class ClipEditorPanel extends JPanel {
     }
 
     private String ffmpegExecutable() {
-        String configured = Preferences.userNodeForPackage(ClipEditorPanel.class).get(PREF_FFMPEG, "").trim();
-        if (!configured.isEmpty() && Files.isExecutable(Path.of(configured))) return configured;
-        return System.getProperty("os.name", "").toLowerCase().contains("win") ? "ffmpeg.exe" : "ffmpeg";
+        return resolveToolExecutable("ffmpeg");
     }
 
     private void updateFfmpegLabel() {
         String configured = Preferences.userNodeForPackage(ClipEditorPanel.class).get(PREF_FFMPEG, "").trim();
-        if (!configured.isEmpty() && Files.isExecutable(Path.of(configured))) {
-            ffmpegLabel.setText("FFmpeg: " + configured);
+        String ffmpeg = ffmpegExecutable();
+        if (isExecutableFile(ffmpeg)) {
+            ffmpegLabel.setText("FFmpeg: " + ffmpeg + " · FFprobe " + (isExecutableFile(ffprobeExecutable()) ? "disponível" : "não encontrado"));
         } else {
-            ffmpegLabel.setText("FFmpeg: " + (isOnPath() ? "disponível no PATH" : "não encontrado; instale e localize ffmpeg.exe"));
+            ffmpegLabel.setText("FFmpeg/FFprobe: " + (isOnPath() ? "disponíveis no PATH" : "não encontrados; instale e localize ffmpeg.exe"));
         }
     }
 
@@ -240,10 +239,70 @@ public class ClipEditorPanel extends JPanel {
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
             boolean exited = probe.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
             if (!exited) probe.destroyForcibly();
-            return exited && probe.exitValue() == 0;
+            if (!exited || probe.exitValue() != 0) return false;
+            Process ffprobe = new ProcessBuilder(ffprobeExecutable(), "-version").redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
+            boolean ffprobeExited = ffprobe.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
+            if (!ffprobeExited) ffprobe.destroyForcibly();
+            return ffprobeExited && ffprobe.exitValue() == 0;
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private String ffprobeExecutable() {
+        String configured = Preferences.userNodeForPackage(ClipEditorPanel.class).get(PREF_FFMPEG, "").trim();
+        if (!configured.isEmpty()) {
+            try {
+                Path sibling = Path.of(configured).resolveSibling(toolName("ffprobe"));
+                if (isExecutableFile(sibling.toString())) return sibling.toString();
+            } catch (Exception ignored) { }
+        }
+        return resolveToolExecutable("ffprobe");
+    }
+
+    private String resolveToolExecutable(String tool) {
+        String executable = toolName(tool);
+        if ("ffmpeg".equals(tool)) {
+            String configured = Preferences.userNodeForPackage(ClipEditorPanel.class).get(PREF_FFMPEG, "").trim();
+            try {
+                if (!configured.isEmpty() && isExecutableFile(configured)) return configured;
+            } catch (Exception ignored) { }
+        }
+        String pathValue = System.getenv("PATH");
+        if (pathValue != null) {
+            for (String directory : pathValue.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+                File candidate = new File(directory, executable);
+                if (candidate.isFile()) return candidate.getAbsolutePath();
+            }
+        }
+        String localAppData = System.getenv("LOCALAPPDATA");
+        if (isWindows() && localAppData != null) {
+            Path packages = Path.of(localAppData, "Microsoft", "WinGet", "Packages");
+            try (java.nio.file.DirectoryStream<Path> publishers = Files.newDirectoryStream(packages, "Gyan.FFmpeg_*")) {
+                for (Path publisher : publishers) {
+                    try (java.nio.file.DirectoryStream<Path> builds = Files.newDirectoryStream(publisher)) {
+                        for (Path build : builds) {
+                            Path candidate = build.resolve("bin").resolve(executable);
+                            if (candidate.toFile().isFile()) return candidate.toAbsolutePath().toString();
+                        }
+                    }
+                }
+            } catch (Exception ignored) { }
+        }
+        return executable;
+    }
+
+    private String toolName(String tool) {
+        return isWindows() ? tool + ".exe" : tool;
+    }
+
+    private boolean isExecutableFile(String path) {
+        return path != null && new File(path).isFile();
+    }
+
+    private boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase().contains("win");
     }
 
     private void startExport() {
@@ -255,7 +314,7 @@ public class ClipEditorPanel extends JPanel {
             end = parseTime(endField.getText());
         } catch (IllegalArgumentException e) { showError(e.getMessage()); return; }
         if (end <= start) { showError("O tempo final deve ser maior que o tempo inicial."); return; }
-        if (end - start > MAX_CLIP_SECONDS) { showError("O clipe deve ter no máximo 5 minutos."); return; }
+        if (end > MAX_VIDEO_SECONDS) { showError("O vídeo e o trecho selecionado devem terminar em até 10 minutos."); return; }
         if (outputFile.toPath().toAbsolutePath().normalize().equals(sourceFile.toPath().toAbsolutePath().normalize())) {
             showError("Escolha um arquivo de destino diferente do original."); return;
         }
@@ -270,7 +329,12 @@ public class ClipEditorPanel extends JPanel {
         setStatus("Exportando com FFmpeg. A velocidade depende da duração, resolução e desempenho do computador.", false);
         String executable = ffmpegExecutable();
         worker = new SwingWorker<>() {
-            @Override protected Integer doInBackground() throws Exception {
+            @Override protected MediaInfo doInBackground() throws Exception {
+                MediaInfo media = probeMedia(sourceFile);
+                if (media.durationSeconds > MAX_VIDEO_SECONDS)
+                    throw new java.io.IOException("Este vídeo tem " + formatDuration(media.durationSeconds) + ". O editor aceita arquivos de até 10 minutos.");
+                if (end > media.durationSeconds)
+                    throw new java.io.IOException("O tempo final informado ultrapassa a duração do vídeo (" + formatDuration(media.durationSeconds) + ").");
                 java.util.List<String> command = java.util.Arrays.asList(executable, "-hide_banner", "-loglevel", "error",
                         "-y", "-i", sourceFile.getAbsolutePath(), "-ss", Long.toString(start), "-t", Long.toString(duration),
                         "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
@@ -294,7 +358,7 @@ public class ClipEditorPanel extends JPanel {
                 int exitCode = process.waitFor();
                 currentProcess = null;
                 if (exitCode != 0) throw new java.io.IOException(errors.length() == 0 ? "FFmpeg encerrou com código " + exitCode : errors.toString().trim());
-                return exitCode;
+                return media;
             }
 
             @Override protected void process(java.util.List<Integer> chunks) {
@@ -312,9 +376,9 @@ public class ClipEditorPanel extends JPanel {
                     return;
                 }
                 try {
-                    get();
-                    setStatus("Clipe salvo com sucesso em: " + outputFile.getAbsolutePath(), false);
-                    JOptionPane.showMessageDialog(owner, "Seu clipe foi exportado em alta qualidade.", "Exportação concluída", JOptionPane.INFORMATION_MESSAGE);
+                    MediaInfo media = get();
+                    setStatus("Clipe salvo com sucesso (" + media.width + " × " + media.height + ", resolução original): " + outputFile.getAbsolutePath(), false);
+                    JOptionPane.showMessageDialog(owner, "Clipe exportado mantendo a resolução original (" + media.width + " × " + media.height + ").", "Exportação concluída", JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception e) {
                     Throwable cause = e.getCause() == null ? e : e.getCause();
                     setStatus("Não foi possível exportar: " + cause.getMessage(), true);
@@ -322,6 +386,44 @@ public class ClipEditorPanel extends JPanel {
             }
         };
         worker.execute();
+    }
+
+    private MediaInfo probeMedia(File file) throws Exception {
+        java.util.List<String> command = java.util.Arrays.asList(ffprobeExecutable(), "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height:format=duration", "-of", "default=noprint_wrappers=1", file.getAbsolutePath());
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) output.append(line).append('\n');
+        }
+        int result = process.waitFor();
+        if (result != 0) throw new java.io.IOException("Não consegui ler os dados do vídeo. Verifique se o FFprobe está na mesma pasta do FFmpeg e se o arquivo é válido. " + output.toString().trim());
+        int width = -1, height = -1;
+        double duration = -1;
+        for (String line : output.toString().split("\\R")) {
+            if (line.startsWith("width=")) width = Integer.parseInt(line.substring(6).trim());
+            else if (line.startsWith("height=")) height = Integer.parseInt(line.substring(7).trim());
+            else if (line.startsWith("duration=")) duration = Double.parseDouble(line.substring(9).trim());
+        }
+        if (width <= 0 || height <= 0 || duration <= 0) throw new java.io.IOException("O FFprobe não encontrou duração e resolução válidas neste arquivo.");
+        return new MediaInfo(width, height, duration);
+    }
+
+    private String formatDuration(double seconds) {
+        long total = (long) Math.ceil(seconds);
+        return String.format(java.util.Locale.ROOT, "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60);
+    }
+
+    private static final class MediaInfo {
+        final int width;
+        final int height;
+        final double durationSeconds;
+        MediaInfo(int width, int height, double durationSeconds) {
+            this.width = width;
+            this.height = height;
+            this.durationSeconds = durationSeconds;
+        }
     }
 
     private void cancelExport() {

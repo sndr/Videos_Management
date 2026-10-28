@@ -17,6 +17,7 @@ Aplicativo desktop em Java para visualizar e gerenciar vídeos do canal autentic
 - IntelliJ IDEA ou outra IDE Java.
 - Biblioteca FlatLaf 3.5.4. A configuração IntelliJ deste repositório aponta para `com.formdev:flatlaf:3.5.4`.
 - Projeto Google Cloud com OAuth 2.0 configurado e a YouTube Data API v3 habilitada.
+- Para editar clipes: FFmpeg e FFprobe instalados. No Windows, pode-se usar `winget install --id Gyan.FFmpeg --exact`.
 
 ## Executar pela IntelliJ IDEA
 
@@ -51,12 +52,12 @@ O modo convidado é apenas para desenvolvimento: ele não consulta o YouTube e n
 
 ## Cortar clipes locais
 
-1. Instale o [FFmpeg](https://ffmpeg.org/download.html) e deixe `ffmpeg.exe` no `PATH`, ou use **Localizar FFmpeg** no editor para escolher o executável. O caminho escolhido fica salvo nas preferências locais do aplicativo.
+1. Instale o [FFmpeg](https://ffmpeg.org/download.html), incluindo FFmpeg e FFprobe. No Windows, também pode instalar com `winget install --id Gyan.FFmpeg --exact`. Deixe os executáveis no `PATH`, ou use **Localizar FFmpeg** para escolher `ffmpeg.exe`; o app procura `ffprobe.exe` na mesma pasta. O caminho fica salvo nas preferências locais do aplicativo.
 2. No dashboard, abra **Editor de Clipes** e selecione o arquivo original que está salvo no computador.
-3. Informe início e fim no formato `HH:MM:SS`. Cada clipe exportado pode ter até cinco minutos.
-4. Escolha o destino e exporte. O vídeo é recodificado em MP4 (H.264, CRF 18) e o áudio em AAC 192 kb/s; o arquivo original não é alterado.
+3. Informe início e fim no formato `HH:MM:SS`. O arquivo fonte e o trecho selecionado devem ter no máximo dez minutos.
+4. Escolha o destino e exporte. O vídeo é recodificado em MP4 (H.264, CRF 18) mantendo as dimensões do arquivo fonte; o áudio é convertido para AAC 192 kb/s. O arquivo original não é alterado.
 
-O corte usa recodificação para manter alta qualidade e permitir cortes precisos. O resultado é visualmente próximo do original, mas a recodificação pode alterar ligeiramente a imagem e o áudio. Use o arquivo fonte original para obter a melhor qualidade disponível. O dashboard não baixa vídeos do YouTube e a API não fornece o arquivo original enviado ao canal.
+O corte usa recodificação para manter alta qualidade e permitir cortes precisos. O resultado é visualmente próximo do original, mas a recodificação pode alterar ligeiramente a imagem e o áudio. A resolução não é ampliada nem reduzida: é preservada conforme as dimensões detectadas pelo FFprobe. Use o arquivo fonte original para obter a melhor qualidade disponível. O dashboard não baixa vídeos do YouTube e a API não fornece o arquivo original enviado ao canal.
 
 ## Credenciais e sessão local
 

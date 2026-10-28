@@ -1,6 +1,12 @@
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
@@ -20,6 +26,12 @@ public class ClipEditorPanel extends JPanel {
     private final JTextField outputField = new JTextField();
     private final JTextField startField = new JTextField("00:00:00");
     private final JTextField endField = new JTextField("00:00:30");
+    private final JLabel preview = new JLabel("Escolha um vídeo para visualizar", SwingConstants.CENTER);
+    private final JLabel playheadLabel = new JLabel("00:00:00 / 00:00:00");
+    private final JButton playButton = new JButton("▶ Reproduzir seleção");
+    private final JButton markStartButton = new JButton("Marcar início");
+    private final JButton markEndButton = new JButton("Marcar fim");
+    private final Timeline timeline = new Timeline();
     private final JTextArea status = new JTextArea("Escolha um arquivo de vídeo local para começar.");
     private final JProgressBar progress = new JProgressBar(0, 100);
     private final JButton exportButton = new JButton("Exportar clipe em alta qualidade");
@@ -30,6 +42,20 @@ public class ClipEditorPanel extends JPanel {
     private SwingWorker<MediaInfo, Integer> worker;
     private File sourceFile;
     private File outputFile;
+    private boolean outputWasChosen;
+    private MediaInfo loadedMedia;
+    private double playheadSeconds;
+    private volatile Process previewProcess;
+    private volatile Process frameProcess;
+    private BufferedImage currentPreviewFrame;
+    private long playbackStart;
+    private int playbackFrame;
+    private int frameRequestId;
+    private SwingWorker<MediaInfo, Void> loadWorker;
+    private SwingWorker<java.util.List<BufferedImage>, Void> thumbnailWorker;
+    private volatile Process thumbnailProcess;
+    private SwingWorker<BufferedImage, Void> seekWorker;
+    private final Timer seekDebounce = new Timer(180, e -> requestPreviewFrame());
 
     public ClipEditorPanel(JFrame owner) {
         this.owner = owner;
@@ -38,6 +64,14 @@ public class ClipEditorPanel extends JPanel {
         setBorder(new EmptyBorder(28, 32, 28, 32));
         add(createHeader(), BorderLayout.NORTH);
         add(createEditorCard(), BorderLayout.CENTER);
+        seekDebounce.setRepeats(false);
+        addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && !isShowing()) {
+                stopPlayback();
+                Process frame = frameProcess;
+                if (frame != null) frame.destroyForcibly();
+            }
+        });
         updateFfmpegLabel();
     }
 
@@ -69,13 +103,22 @@ public class ClipEditorPanel extends JPanel {
         g.weightx = 1;
 
         addRow(card, g, 0, "Arquivo original", createFileRow(sourceField, "Selecionar vídeo…", this::chooseSource));
-        addRow(card, g, 2, "Salvar clipe como", createFileRow(outputField, "Escolher destino…", this::chooseOutput));
+        addRow(card, g, 2, "Prévia e seleção visual do trecho", createPreviewEditor());
+        addRow(card, g, 4, "Salvar clipe como", createFileRow(outputField, "Escolher destino…", this::chooseOutput));
 
         JPanel times = new JPanel(new GridLayout(1, 2, 18, 0));
         times.setOpaque(false);
         times.add(createTimeField("Início (HH:MM:SS)", startField));
         times.add(createTimeField("Fim (HH:MM:SS)", endField));
-        addRow(card, g, 4, "Trecho do vídeo", times);
+        javax.swing.event.DocumentListener rangeListener = new javax.swing.event.DocumentListener() {
+            private void changed() { updateTimelineFromFields(); }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { changed(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { changed(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { changed(); }
+        };
+        startField.getDocument().addDocumentListener(rangeListener);
+        endField.getDocument().addDocumentListener(rangeListener);
+        addRow(card, g, 6, "Ajuste preciso do trecho (opcional)", times);
 
         JPanel qualityInfo = new JPanel();
         qualityInfo.setLayout(new BoxLayout(qualityInfo, BoxLayout.Y_AXIS));
@@ -90,7 +133,7 @@ public class ClipEditorPanel extends JPanel {
         qualityInfo.add(qualityTitle);
         qualityInfo.add(Box.createVerticalStrut(5));
         qualityInfo.add(qualityDescription);
-        g.gridx = 0; g.gridy = 6; g.gridwidth = 2;
+        g.gridx = 0; g.gridy = 8; g.gridwidth = 2;
         card.add(qualityInfo, g);
 
         JPanel ffmpegRow = new JPanel(new BorderLayout(12, 0));
@@ -101,7 +144,7 @@ public class ClipEditorPanel extends JPanel {
         locateFfmpeg.addActionListener(e -> chooseFfmpeg());
         ffmpegRow.add(ffmpegLabel, BorderLayout.CENTER);
         ffmpegRow.add(locateFfmpeg, BorderLayout.EAST);
-        g.gridy = 7;
+        g.gridy = 9;
         card.add(ffmpegRow, g);
 
         status.setEditable(false);
@@ -111,13 +154,13 @@ public class ClipEditorPanel extends JPanel {
         status.setForeground(new Color(165, 175, 190));
         status.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         status.setRows(3);
-        g.gridy = 8;
+        g.gridy = 10;
         card.add(status, g);
 
         progress.setVisible(false);
         progress.setStringPainted(true);
         progress.setString("Preparando exportação…");
-        g.gridy = 9;
+        g.gridy = 11;
         card.add(progress, g);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
@@ -130,19 +173,87 @@ public class ClipEditorPanel extends JPanel {
         exportButton.addActionListener(e -> startExport());
         actions.add(cancelButton);
         actions.add(exportButton);
-        g.gridy = 10;
+        g.gridy = 12;
         card.add(actions, g);
 
         JLabel note = new JLabel("Use o arquivo original salvo no seu computador. A API do YouTube não fornece o arquivo original para edição.");
         note.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         note.setForeground(new Color(145, 155, 172));
-        g.gridy = 11;
+        g.gridy = 13;
         card.add(note, g);
         return new JScrollPane(card, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
                 ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER) {{
             setBorder(null);
             getViewport().setBackground(new Color(36, 40, 48));
         }};
+    }
+
+    private JComponent createPreviewEditor() {
+        JPanel editor = new JPanel(new BorderLayout(0, 10));
+        editor.setOpaque(false);
+
+        preview.setOpaque(true);
+        preview.setBackground(new Color(13, 16, 21));
+        preview.setForeground(new Color(165, 175, 190));
+        preview.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        preview.setPreferredSize(new Dimension(800, 450));
+        preview.setMinimumSize(new Dimension(480, 270));
+        preview.setBorder(BorderFactory.createLineBorder(new Color(60, 68, 82)));
+        preview.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                if (currentPreviewFrame != null) showPreviewFrame(currentPreviewFrame);
+            }
+        });
+        editor.add(preview, BorderLayout.CENTER);
+
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        controls.setOpaque(false);
+        JButton back = new JButton("−1s");
+        JButton forward = new JButton("+1s");
+        JButton stop = new JButton("Parar");
+        for (JButton button : new JButton[]{back, playButton, stop, forward, markStartButton, markEndButton}) {
+            button.setFocusPainted(false);
+            controls.add(button);
+        }
+        playButton.setBackground(new Color(66, 133, 244));
+        playButton.setForeground(Color.WHITE);
+        playButton.addActionListener(e -> togglePlayback());
+        stop.addActionListener(e -> stopPlayback());
+        back.addActionListener(e -> seekTo(Math.max(0, playheadSeconds - 1)));
+        forward.addActionListener(e -> seekTo(Math.min(durationSeconds(), playheadSeconds + 1)));
+        markStartButton.addActionListener(e -> setRangeStart((long) playheadSeconds));
+        markEndButton.addActionListener(e -> setRangeEnd((long) playheadSeconds));
+
+        JPanel timelineBox = new JPanel(new BorderLayout(0, 6));
+        timelineBox.setOpaque(false);
+        timeline.setPreferredSize(new Dimension(800, 76));
+        timeline.setFocusable(true);
+        timeline.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("LEFT"), "seek-back");
+        timeline.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("RIGHT"), "seek-forward");
+        timeline.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("SPACE"), "toggle-playback");
+        timeline.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke('I'), "mark-in");
+        timeline.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke('O'), "mark-out");
+        timeline.getActionMap().put("seek-back", new AbstractAction() { @Override public void actionPerformed(java.awt.event.ActionEvent e) { seekTo(Math.max(0, playheadSeconds - 1)); } });
+        timeline.getActionMap().put("seek-forward", new AbstractAction() { @Override public void actionPerformed(java.awt.event.ActionEvent e) { seekTo(Math.min(durationSeconds(), playheadSeconds + 1)); } });
+        timeline.getActionMap().put("toggle-playback", new AbstractAction() { @Override public void actionPerformed(java.awt.event.ActionEvent e) { togglePlayback(); } });
+        timeline.getActionMap().put("mark-in", new AbstractAction() { @Override public void actionPerformed(java.awt.event.ActionEvent e) { setRangeStart((long) playheadSeconds); } });
+        timeline.getActionMap().put("mark-out", new AbstractAction() { @Override public void actionPerformed(java.awt.event.ActionEvent e) { setRangeEnd((long) playheadSeconds); } });
+        timelineBox.add(timeline, BorderLayout.CENTER);
+        JPanel timelineInfo = new JPanel(new BorderLayout());
+        timelineInfo.setOpaque(false);
+        playheadLabel.setForeground(new Color(185, 195, 210));
+        timelineInfo.add(playheadLabel, BorderLayout.WEST);
+        JLabel hint = new JLabel("Arraste as alças para escolher início e fim; clique na linha do tempo para buscar.");
+        hint.setForeground(new Color(145, 155, 172));
+        timelineInfo.add(hint, BorderLayout.EAST);
+        timelineBox.add(timelineInfo, BorderLayout.SOUTH);
+
+        JPanel bottom = new JPanel(new BorderLayout(0, 8));
+        bottom.setOpaque(false);
+        bottom.add(controls, BorderLayout.NORTH);
+        bottom.add(timelineBox, BorderLayout.CENTER);
+        editor.add(bottom, BorderLayout.SOUTH);
+        return editor;
     }
 
     private void addRow(JPanel panel, GridBagConstraints g, int row, String label, JComponent input) {
@@ -185,24 +296,345 @@ public class ClipEditorPanel extends JPanel {
                 "Vídeos (MP4, MOV, MKV, AVI, WebM)", "mp4", "mov", "mkv", "avi", "webm", "m4v"));
         if (chooser.showOpenDialog(owner) != JFileChooser.APPROVE_OPTION) return;
         sourceFile = chooser.getSelectedFile();
+        File selectedSource = sourceFile;
+        stopPlayback();
+        seekDebounce.stop();
+        frameRequestId++;
+        if (loadWorker != null) loadWorker.cancel(true);
+        if (thumbnailWorker != null) thumbnailWorker.cancel(true);
+        Process oldThumbnailProcess = thumbnailProcess;
+        if (oldThumbnailProcess != null) oldThumbnailProcess.destroyForcibly();
+        if (seekWorker != null) seekWorker.cancel(true);
+        Process pendingFrame = frameProcess;
+        if (pendingFrame != null) pendingFrame.destroyForcibly();
+        loadedMedia = null;
+        currentPreviewFrame = null;
+        timeline.reset();
+        preview.setIcon(null);
+        preview.setText("Carregando prévia do vídeo…");
         sourceField.setText(sourceFile.getAbsolutePath());
-        if (outputFile == null) {
-            String name = sourceFile.getName().replaceFirst("(?i)\\.[^.]+$", "");
-            outputFile = new File(sourceFile.getParentFile(), name + "_clipe.mp4");
-            outputField.setText(outputFile.getAbsolutePath());
+        if (!outputWasChosen) setDefaultOutputFor(sourceFile);
+        setStatus("Lendo duração, resolução e quadros de prévia…", false);
+        loadWorker = new SwingWorker<>() {
+            @Override protected MediaInfo doInBackground() throws Exception {
+                MediaInfo media = probeMedia(selectedSource);
+                if (media.durationSeconds > MAX_VIDEO_SECONDS) throw new java.io.IOException(
+                        "Este vídeo tem " + formatDuration(media.durationSeconds) + ". O editor aceita arquivos de até 10 minutos.");
+                return media;
+            }
+            @Override protected void done() {
+                if (!selectedSource.equals(sourceFile)) return;
+                try {
+                    loadedMedia = get();
+                    long duration = Math.max(1, (long) Math.ceil(loadedMedia.durationSeconds));
+                    long initialEnd = Math.min(30, duration);
+                    startField.setText("00:00:00");
+                    endField.setText(formatTime(initialEnd));
+                    timeline.setMedia(duration, java.util.Collections.emptyList());
+                    playheadSeconds = 0;
+                    updateTimeDisplay();
+                    requestPreviewFrame();
+                    setStatus("Prévia pronta · " + loadedMedia.width + " × " + loadedMedia.height + " · " + formatDuration(loadedMedia.durationSeconds), false);
+                    loadTimelineThumbnails(selectedSource, loadedMedia);
+                } catch (Exception ex) {
+                    Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+                    preview.setText("Não foi possível abrir a prévia deste vídeo.");
+                    setStatus(cause.getMessage(), true);
+                }
+            }
+        };
+        loadWorker.execute();
+    }
+
+    private void loadTimelineThumbnails(File file, MediaInfo media) {
+        thumbnailWorker = new SwingWorker<>() {
+            @Override protected java.util.List<BufferedImage> doInBackground() throws Exception {
+                return extractTimelineFrames(file, media.durationSeconds, 12);
+            }
+            @Override protected void done() {
+                if (!file.equals(sourceFile) || isCancelled()) return;
+                thumbnailProcess = null;
+                try { timeline.setFrames(get()); }
+                catch (Exception ignored) { /* O quadro principal continua disponível sem miniaturas. */ }
+            }
+        };
+        thumbnailWorker.execute();
+    }
+
+    private void updateTimelineFromFields() {
+        if (loadedMedia == null) return;
+        try {
+            long start = parseTime(startField.getText());
+            long end = parseTime(endField.getText());
+            timeline.setRange(start, end);
+        } catch (IllegalArgumentException ignored) {
+            timeline.repaint();
         }
-        setStatus("Arquivo selecionado. A duração total deve ser de até 10 minutos. O editor verifica duração e resolução antes de exportar.", false);
+    }
+
+    private void setRangeStart(long seconds) {
+        long end = safeParse(endField.getText(), seconds + 1);
+        seconds = Math.max(0, Math.min(seconds, end - 1));
+        startField.setText(formatTime(seconds));
+        updateTimelineFromFields();
+    }
+
+    private void setRangeEnd(long seconds) {
+        long start = safeParse(startField.getText(), 0);
+        seconds = Math.max(start + 1, Math.min(seconds, (long) Math.ceil(durationSeconds())));
+        endField.setText(formatTime(seconds));
+        updateTimelineFromFields();
+    }
+
+    private long safeParse(String value, long fallback) {
+        try { return parseTime(value); } catch (IllegalArgumentException ignored) { return fallback; }
+    }
+
+    private double durationSeconds() {
+        return loadedMedia == null ? 0 : loadedMedia.durationSeconds;
+    }
+
+    private void seekTo(double seconds) {
+        if (loadedMedia == null) return;
+        seekDebounce.stop();
+        playheadSeconds = Math.max(0, Math.min(seconds, loadedMedia.durationSeconds));
+        stopPlayback();
+        timeline.setPlayhead(playheadSeconds);
+        updateTimeDisplay();
+        requestPreviewFrame();
+    }
+
+    private void updateTimeDisplay() {
+        playheadLabel.setText(formatTime((long) playheadSeconds) + " / " +
+                (loadedMedia == null ? "00:00:00" : formatDuration(loadedMedia.durationSeconds)));
+        timeline.setPlayhead(playheadSeconds);
+    }
+
+    private void requestPreviewFrame() {
+        if (sourceFile == null || loadedMedia == null) return;
+        final File requestedFile = sourceFile;
+        final double requestedTime = playheadSeconds;
+        final int request = ++frameRequestId;
+        Process running = frameProcess;
+        if (running != null) running.destroyForcibly();
+        if (seekWorker != null) seekWorker.cancel(true);
+        seekWorker = new SwingWorker<>() {
+            @Override protected BufferedImage doInBackground() throws Exception {
+                java.util.List<String> command = java.util.Arrays.asList(ffmpegExecutable(), "-hide_banner", "-loglevel", "error",
+                        "-ss", String.format(java.util.Locale.ROOT, "%.3f", requestedTime), "-i", requestedFile.getAbsolutePath(),
+                        "-frames:v", "1", "-vf", "scale=960:540:force_original_aspect_ratio=decrease", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1");
+                Process process = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                frameProcess = process;
+                byte[] bytes = process.getInputStream().readAllBytes();
+                int exit = process.waitFor();
+                if (exit != 0 || bytes.length == 0) throw new java.io.IOException("FFmpeg não conseguiu criar o quadro de prévia.");
+                BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+                if (image == null) throw new java.io.IOException("O formato do quadro de prévia não é compatível.");
+                return image;
+            }
+            @Override protected void done() {
+                if (request != frameRequestId || isCancelled()) return;
+                frameProcess = null;
+                try {
+                    currentPreviewFrame = get();
+                    showPreviewFrame(currentPreviewFrame);
+                } catch (Exception ignored) {
+                    preview.setIcon(null);
+                    preview.setText("Prévia indisponível para este formato.");
+                }
+            }
+        };
+        seekWorker.execute();
+    }
+
+    private void showPreviewFrame(BufferedImage image) {
+        int maxWidth = Math.max(1, preview.getWidth() - 20);
+        int maxHeight = Math.max(1, preview.getHeight() - 20);
+        double scale = Math.min((double) maxWidth / image.getWidth(), (double) maxHeight / image.getHeight());
+        int width = Math.max(1, (int) Math.round(image.getWidth() * scale));
+        int height = Math.max(1, (int) Math.round(image.getHeight() * scale));
+        preview.setText("");
+        preview.setIcon(new ImageIcon(image.getScaledInstance(width, height, Image.SCALE_SMOOTH)));
+    }
+
+    private java.util.List<BufferedImage> extractTimelineFrames(File file, double duration, int count) throws Exception {
+        java.util.List<BufferedImage> frames = new java.util.ArrayList<>();
+        for (int i = 0; i < count && !Thread.currentThread().isInterrupted(); i++) {
+            double timestamp = Math.min(Math.max(0, duration - 0.1), (i + 0.5) * duration / count);
+            String filter = "scale=180:102:force_original_aspect_ratio=decrease,pad=180:102:(ow-iw)/2:(oh-ih)/2";
+            java.util.List<String> command = java.util.Arrays.asList(ffmpegExecutable(), "-hide_banner", "-loglevel", "error",
+                    "-ss", String.format(java.util.Locale.ROOT, "%.3f", timestamp), "-i", file.getAbsolutePath(),
+                    "-frames:v", "1", "-vf", filter, "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "7", "pipe:1");
+            Process process = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            thumbnailProcess = process;
+            byte[] bytes = process.getInputStream().readAllBytes();
+            int exit = process.waitFor();
+            if (exit == 0 && bytes.length > 0) {
+                BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+                if (image != null) frames.add(image);
+            }
+        }
+        if (frames.isEmpty()) throw new java.io.IOException("Não foi possível criar miniaturas para a linha do tempo.");
+        return frames;
+    }
+
+    private java.util.List<BufferedImage> splitJpegFrames(byte[] bytes) throws Exception {
+        java.util.List<BufferedImage> frames = new java.util.ArrayList<>();
+        ByteArrayOutputStream frame = null;
+        int previous = -1;
+        for (byte value : bytes) {
+            int current = value & 0xff;
+            if (frame == null && previous == 0xff && current == 0xd8) {
+                frame = new ByteArrayOutputStream();
+                frame.write(0xff); frame.write(0xd8);
+            } else if (frame != null) {
+                frame.write(current);
+                if (previous == 0xff && current == 0xd9) {
+                    BufferedImage image = ImageIO.read(new ByteArrayInputStream(frame.toByteArray()));
+                    if (image != null) frames.add(image);
+                    frame = null;
+                }
+            }
+            previous = current;
+        }
+        return frames;
+    }
+
+    private void togglePlayback() {
+        if (previewProcess != null && previewProcess.isAlive()) { stopPlayback(); return; }
+        if (sourceFile == null || loadedMedia == null) { showError("Selecione um vídeo para reproduzir a prévia."); return; }
+        seekDebounce.stop();
+        if (thumbnailWorker != null) thumbnailWorker.cancel(true);
+        Process thumbnail = thumbnailProcess;
+        if (thumbnail != null) thumbnail.destroyForcibly();
+        frameRequestId++;
+        Process pendingFrame = frameProcess;
+        if (pendingFrame != null) pendingFrame.destroyForcibly();
+        if (seekWorker != null) seekWorker.cancel(true);
+        long start = safeParse(startField.getText(), 0);
+        long end = safeParse(endField.getText(), (long) loadedMedia.durationSeconds);
+        if (playheadSeconds < start || playheadSeconds >= end) playheadSeconds = start;
+        playbackStart = (long) playheadSeconds;
+        playbackFrame = 0;
+        playButton.setText("❚❚ Pausar");
+        timeline.setPlaying(true);
+        final File playingFile = sourceFile;
+        final long selectionEnd = end;
+        new Thread(() -> {
+            Process process = null;
+            try {
+                long remaining = Math.max(1, selectionEnd - playbackStart);
+                java.util.List<String> command = java.util.Arrays.asList(ffmpegExecutable(), "-hide_banner", "-loglevel", "error",
+                        "-ss", Long.toString(playbackStart), "-re", "-i", playingFile.getAbsolutePath(), "-t", Long.toString(remaining),
+                        "-vf", "fps=15,scale=960:540:force_original_aspect_ratio=decrease", "-an", "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "6", "pipe:1");
+                process = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                previewProcess = process;
+                final Process activeProcess = process;
+                byte[] bytes = new byte[8192];
+                ByteArrayOutputStream frame = null;
+                int previous = -1;
+                int read;
+                while (!Thread.currentThread().isInterrupted() && (read = process.getInputStream().read(bytes)) != -1) {
+                    for (int i = 0; i < read; i++) {
+                        int current = bytes[i] & 0xff;
+                        if (frame == null && previous == 0xff && current == 0xd8) {
+                            frame = new ByteArrayOutputStream(); frame.write(0xff); frame.write(0xd8);
+                        } else if (frame != null) {
+                            frame.write(current);
+                            if (previous == 0xff && current == 0xd9) {
+                                BufferedImage image = ImageIO.read(new ByteArrayInputStream(frame.toByteArray()));
+                                frame = null;
+                                if (image != null) {
+                                    final BufferedImage next = image;
+                                    final double position = playbackStart + playbackFrame++ / 15.0;
+                                    SwingUtilities.invokeLater(() -> {
+                                        if (previewProcess == activeProcess) {
+                                            currentPreviewFrame = next;
+                                            playheadSeconds = position;
+                                            showPreviewFrame(next);
+                                            updateTimeDisplay();
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        previous = current;
+                    }
+                }
+                process.waitFor();
+            } catch (Exception ignored) {
+                if (process != null) process.destroyForcibly();
+            } finally {
+                Process finishedProcess = process;
+                SwingUtilities.invokeLater(() -> {
+                    if (previewProcess == finishedProcess) {
+                        previewProcess = null;
+                        playButton.setText("▶ Reproduzir seleção");
+                        timeline.setPlaying(false);
+                        if (loadedMedia != null) {
+                            playheadSeconds = Math.min(selectionEnd, loadedMedia.durationSeconds);
+                            timeline.setPlayhead(playheadSeconds);
+                            updateTimeDisplay();
+                        }
+                    }
+                });
+            }
+        }, "clip-preview").start();
+    }
+
+    private void stopPlayback() {
+        Process process = previewProcess;
+        previewProcess = null;
+        if (process != null) process.destroyForcibly();
+        playButton.setText("▶ Reproduzir seleção");
+        timeline.setPlaying(false);
+    }
+
+    private void setPlayheadFromTimeline(double seconds) {
+        playheadSeconds = Math.max(0, Math.min(seconds, durationSeconds()));
+        updateTimeDisplay();
+    }
+
+    private void setRangeFromTimeline(long start, long end) {
+        startField.setText(formatTime(start));
+        endField.setText(formatTime(end));
+        updateTimelineFromFields();
+    }
+
+    private String formatTime(long seconds) {
+        return String.format(java.util.Locale.ROOT, "%02d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60);
     }
 
     private void chooseOutput() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Salvar clipe MP4");
-        chooser.setSelectedFile(outputFile != null ? outputFile : new File("clipe.mp4"));
+        File downloads = downloadsDirectory();
+        chooser.setCurrentDirectory(downloads);
+        chooser.setSelectedFile(outputFile != null ? outputFile : new File(downloads, "clipe.mp4"));
         if (chooser.showSaveDialog(owner) != JFileChooser.APPROVE_OPTION) return;
         File selected = chooser.getSelectedFile();
         if (!selected.getName().toLowerCase().endsWith(".mp4")) selected = new File(selected.getParentFile(), selected.getName() + ".mp4");
         outputFile = selected;
+        outputWasChosen = true;
         outputField.setText(outputFile.getAbsolutePath());
+    }
+
+    private void setDefaultOutputFor(File source) {
+        String name = source.getName().replaceFirst("(?i)\\.[^.]+$", "");
+        outputFile = new File(downloadsDirectory(), name + "_clipe.mp4");
+        outputField.setText(outputFile.getAbsolutePath());
+    }
+
+    private File downloadsDirectory() {
+        File home = new File(System.getProperty("user.home", "."));
+        File downloads = new File(home, "Downloads");
+        if (downloads.isDirectory()) return downloads;
+        try {
+            Files.createDirectories(downloads.toPath());
+            return downloads;
+        } catch (Exception ignored) {
+            return home;
+        }
     }
 
     private void chooseFfmpeg() {
@@ -415,10 +847,137 @@ public class ClipEditorPanel extends JPanel {
         return String.format(java.util.Locale.ROOT, "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60);
     }
 
+    private final class Timeline extends JComponent {
+        private static final long serialVersionUID = 1L;
+        private java.util.List<BufferedImage> frames = java.util.Collections.emptyList();
+        private double duration;
+        private double inPoint;
+        private double outPoint;
+        private double playhead;
+        private boolean playing;
+        private int dragMode;
+
+        Timeline() {
+            setOpaque(true);
+            setBackground(new Color(26, 30, 37));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            MouseAdapter mouse = new MouseAdapter() {
+                @Override public void mousePressed(MouseEvent e) {
+                    if (duration <= 0) return;
+                    int inX = xFor(inPoint), outX = xFor(outPoint);
+                    int x = e.getX();
+                    if (Math.abs(x - inX) <= 16) dragMode = 1;
+                    else if (Math.abs(x - outX) <= 16) dragMode = 2;
+                    else dragMode = 3;
+                    updateFromMouse(x, false);
+                }
+                @Override public void mouseDragged(MouseEvent e) { updateFromMouse(e.getX(), false); }
+                @Override public void mouseReleased(MouseEvent e) {
+                    updateFromMouse(e.getX(), true);
+                    dragMode = 0;
+                }
+            };
+            addMouseListener(mouse);
+            addMouseMotionListener(mouse);
+        }
+
+        void reset() {
+            duration = 0; inPoint = 0; outPoint = 0; playhead = 0;
+            frames = java.util.Collections.emptyList(); repaint();
+        }
+
+        void setMedia(double seconds, java.util.List<BufferedImage> images) {
+            duration = Math.max(1, seconds); inPoint = 0; outPoint = duration;
+            frames = images == null ? java.util.Collections.emptyList() : images;
+            repaint();
+        }
+
+        void setFrames(java.util.List<BufferedImage> images) {
+            frames = images == null ? java.util.Collections.emptyList() : images;
+            repaint();
+        }
+
+        void setRange(double start, double end) {
+            if (duration <= 0) return;
+            inPoint = Math.max(0, Math.min(start, duration));
+            outPoint = Math.max(inPoint, Math.min(end, duration));
+            repaint();
+        }
+
+        void setPlayhead(double seconds) { playhead = Math.max(0, Math.min(seconds, duration)); repaint(); }
+        void setPlaying(boolean value) { playing = value; repaint(); }
+
+        private int xFor(double seconds) {
+            int left = 10, right = Math.max(left + 1, getWidth() - 10);
+            return left + (int) Math.round((right - left) * (duration <= 0 ? 0 : seconds / duration));
+        }
+
+        private double timeFor(int x) {
+            int left = 10, right = Math.max(left + 1, getWidth() - 10);
+            return duration * Math.max(0, Math.min(1, (double) (x - left) / (right - left)));
+        }
+
+        private void updateFromMouse(int x, boolean finished) {
+            double seconds = timeFor(x);
+            if (dragMode == 1) {
+                inPoint = Math.max(0, Math.min(seconds, outPoint - 1));
+                setRangeFromTimeline(Math.round(inPoint), Math.round(outPoint));
+            } else if (dragMode == 2) {
+                outPoint = Math.min(duration, Math.max(seconds, inPoint + 1));
+                setRangeFromTimeline(Math.round(inPoint), Math.round(outPoint));
+            } else {
+                setPlayheadFromTimeline(seconds);
+                if (!finished) seekDebounce.restart();
+            }
+            if (finished) seekTo(playhead);
+            repaint();
+        }
+
+        @Override protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int left = 10, right = Math.max(left + 1, getWidth() - 10), top = 5, imageHeight = Math.min(48, getHeight() - 22);
+            g.setColor(new Color(17, 20, 25));
+            g.fillRoundRect(left, top, right - left, imageHeight, 8, 8);
+            if (!frames.isEmpty()) {
+                int cell = (right - left) / frames.size();
+                for (int i = 0; i < frames.size(); i++) {
+                    int x = left + i * cell;
+                    g.drawImage(frames.get(i), x, top, i == frames.size() - 1 ? right - x : cell + 1, imageHeight, null);
+                }
+            }
+            int inX = xFor(inPoint), outX = xFor(outPoint), playX = xFor(playhead);
+            g.setColor(new Color(4, 8, 14, 145));
+            g.fillRect(left, top, Math.max(0, inX - left), imageHeight);
+            g.fillRect(outX, top, Math.max(0, right - outX), imageHeight);
+            g.setColor(new Color(66, 133, 244, 45));
+            g.fillRect(inX, top, Math.max(0, outX - inX), imageHeight);
+            g.setColor(new Color(91, 161, 255));
+            g.setStroke(new BasicStroke(2f));
+            g.drawLine(inX, top, inX, top + imageHeight + 7);
+            g.drawLine(outX, top, outX, top + imageHeight + 7);
+            g.fillRoundRect(inX - 5, top - 2, 10, imageHeight + 8, 5, 5);
+            g.fillRoundRect(outX - 5, top - 2, 10, imageHeight + 8, 5, 5);
+            g.setColor(Color.WHITE);
+            g.setStroke(new BasicStroke(2f));
+            g.drawLine(playX, top - 1, playX, top + imageHeight + 7);
+            g.fillOval(playX - 4, top - 4, 8, 8);
+            g.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+            g.setColor(new Color(160, 170, 185));
+            String leftText = "00:00";
+            String rightText = formatTime((long) duration);
+            g.drawString(leftText, left, getHeight() - 3);
+            g.drawString(rightText, Math.max(left, right - g.getFontMetrics().stringWidth(rightText)), getHeight() - 3);
+            g.dispose();
+        }
+    }
+
     private static final class MediaInfo {
         final int width;
         final int height;
         final double durationSeconds;
+        java.util.List<BufferedImage> thumbnails = java.util.Collections.emptyList();
         MediaInfo(int width, int height, double durationSeconds) {
             this.width = width;
             this.height = height;

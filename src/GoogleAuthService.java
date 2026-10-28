@@ -70,7 +70,7 @@ public class GoogleAuthService {
                         "&code_challenge=" + URLEncoder.encode(challenge, StandardCharsets.UTF_8) +
                         "&code_challenge_method=S256" +
                         "&scope=" + URLEncoder.encode(scopes, StandardCharsets.UTF_8) +
-                        "&prompt=consent select_account";
+                        "&prompt=" + URLEncoder.encode("consent select_account", StandardCharsets.UTF_8);
 
                 // 3. Abre o navegador padrão do sistema
                 if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {

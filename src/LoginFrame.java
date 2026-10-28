@@ -16,7 +16,7 @@ import java.util.List;
 public class LoginFrame extends JFrame {
     private static final long serialVersionUID = 1L;
 
-    private JLabel lblStatus;
+    private JTextArea lblStatus;
     private JProgressBar progressBar;
     private JCheckBox chkSalvarSessao;
     private JPanel savedSessionCard;
@@ -58,7 +58,7 @@ public class LoginFrame extends JFrame {
                     mainSplit.revalidate();
                 }
                 if (!compact) {
-                    Dimension target = new Dimension(Math.max(320, (int) (getWidth() * 0.38)), Math.max(1, getHeight()));
+                    Dimension target = new Dimension(Math.max(280, Math.min(420, (int) (getWidth() * 0.26))), Math.max(1, getHeight()));
                     if (!target.equals(presentation.getPreferredSize())) {
                         presentation.setPreferredSize(target);
                         mainSplit.revalidate();
@@ -333,10 +333,20 @@ public class LoginFrame extends JFrame {
         progressBar.setMaximumSize(new Dimension(440, 4));
         progressBar.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        lblStatus = new JLabel("Pronto para autenticar.");
+        JTextArea status = new JTextArea("Pronto para autenticar.");
+        status.setEditable(false);
+        status.setFocusable(false);
+        status.setLineWrap(true);
+        status.setWrapStyleWord(false);
+        status.setOpaque(false);
+        status.setBorder(new EmptyBorder(2, 4, 2, 4));
+        status.setRows(1);
+        status.setColumns(50);
+        lblStatus = status;
         lblStatus.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         lblStatus.setForeground(new Color(130, 140, 155));
         lblStatus.setAlignmentX(Component.CENTER_ALIGNMENT);
+        lblStatus.setMaximumSize(new Dimension(440, 150));
 
         authCard.add(progressBar);
         authCard.add(Box.createRigidArea(new Dimension(0, 8)));
@@ -544,8 +554,7 @@ public class LoginFrame extends JFrame {
 
     private void executarFluxoOAuthReal() {
         progressBar.setVisible(true);
-        lblStatus.setText("Abrindo navegador oficial do Google (accounts.google.com)...");
-        lblStatus.setForeground(new Color(97, 175, 239));
+        atualizarStatus("Abrindo navegador oficial do Google (accounts.google.com)...", new Color(97, 175, 239));
 
         String clientId = GoogleCredentialsManager.getClientId();
         String clientSecret = GoogleCredentialsManager.getClientSecret();
@@ -559,10 +568,25 @@ public class LoginFrame extends JFrame {
             @Override
             public void onError(String message) {
                 progressBar.setVisible(false);
-                lblStatus.setText("Erro no Google OAuth: " + message);
-                lblStatus.setForeground(new Color(224, 108, 117));
+                atualizarStatus("Erro no Google OAuth: " + message, new Color(224, 108, 117));
             }
         });
+    }
+
+    private void atualizarStatus(String mensagem, Color cor) {
+        lblStatus.setText(mensagem);
+        lblStatus.setForeground(cor);
+        if (lblStatus != null) {
+            JTextArea area = lblStatus;
+            int largura = Math.max(1, area.getWidth());
+            FontMetrics metrics = area.getFontMetrics(area.getFont());
+            int larguraTexto = metrics.stringWidth(mensagem);
+            int linhas = Math.max(1, (int) Math.ceil((double) larguraTexto / largura));
+            area.setRows(Math.min(linhas, 10));
+            area.setMaximumSize(new Dimension(440, Math.max(24, area.getPreferredSize().height)));
+        }
+        lblStatus.revalidate();
+        lblStatus.repaint();
     }
 
     /**

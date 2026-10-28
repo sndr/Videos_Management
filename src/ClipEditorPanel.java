@@ -1,5 +1,9 @@
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.SourceDataLine;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -29,6 +33,7 @@ public class ClipEditorPanel extends JPanel {
     private final JLabel preview = new JLabel("Escolha um vídeo para visualizar", SwingConstants.CENTER);
     private final JLabel playheadLabel = new JLabel("00:00:00 / 00:00:00");
     private final JButton playButton = new JButton("▶ Reproduzir seleção");
+    private final JButton muteButton = new JButton("🔊 Som ligado");
     private final JButton markStartButton = new JButton("Marcar início");
     private final JButton markEndButton = new JButton("Marcar fim");
     private final Timeline timeline = new Timeline();
@@ -46,6 +51,10 @@ public class ClipEditorPanel extends JPanel {
     private MediaInfo loadedMedia;
     private double playheadSeconds;
     private volatile Process previewProcess;
+    private volatile Process audioProcess;
+    private volatile SourceDataLine audioLine;
+    private volatile boolean previewMuted;
+    private volatile long playbackGeneration;
     private volatile Process frameProcess;
     private BufferedImage currentPreviewFrame;
     private long playbackStart;
@@ -233,12 +242,14 @@ public class ClipEditorPanel extends JPanel {
         });
         editor.add(preview, BorderLayout.CENTER);
 
-        JPanel controls = new JPanel(new GridLayout(1, 6, 8, 6));
+        JPanel controls = new JPanel(new GridLayout(0, 4, 8, 6));
         controls.setOpaque(false);
         JButton back = new JButton("−1s");
         JButton forward = new JButton("+1s");
         JButton stop = new JButton("Parar");
-        for (JButton button : new JButton[]{back, playButton, stop, forward, markStartButton, markEndButton}) {
+        muteButton.setEnabled(false);
+        muteButton.setToolTipText("O vídeo selecionado ainda não foi carregado.");
+        for (JButton button : new JButton[]{back, playButton, stop, forward, markStartButton, markEndButton, muteButton}) {
             button.setFocusPainted(false);
             controls.add(button);
         }
@@ -251,6 +262,12 @@ public class ClipEditorPanel extends JPanel {
         forward.addActionListener(e -> seekTo(Math.min(durationSeconds(), playheadSeconds + 1)));
         markStartButton.addActionListener(e -> setRangeStart((long) playheadSeconds));
         markEndButton.addActionListener(e -> setRangeEnd((long) playheadSeconds));
+        muteButton.addActionListener(e -> {
+            previewMuted = !previewMuted;
+            updateMuteButton();
+            SourceDataLine line = audioLine;
+            if (previewMuted && line != null) line.flush();
+        });
 
         JPanel timelineBox = new JPanel(new BorderLayout(0, 6));
         timelineBox.setOpaque(false);
@@ -323,12 +340,12 @@ public class ClipEditorPanel extends JPanel {
     }
 
     private void installResponsiveControls(JPanel controls) {
-        final int[] currentColumns = {6};
+        final int[] currentColumns = {4};
         controls.addComponentListener(new java.awt.event.ComponentAdapter() {
             @Override public void componentResized(java.awt.event.ComponentEvent e) {
                 int width = controls.getWidth();
                 if (width <= 0) return;
-                int columns = width >= 900 ? 6 : width >= 520 ? 3 : 2;
+                int columns = width >= 760 ? 4 : width >= 520 ? 3 : 2;
                 if (columns == currentColumns[0]) return;
                 currentColumns[0] = columns;
                 controls.setLayout(new GridLayout(0, columns, 8, 6));
@@ -394,6 +411,8 @@ public class ClipEditorPanel extends JPanel {
         timeline.reset();
         preview.setIcon(null);
         preview.setText("Carregando prévia do vídeo…");
+        muteButton.setEnabled(false);
+        muteButton.setText("Carregando áudio…");
         sourceField.setText(sourceFile.getAbsolutePath());
         if (!outputWasChosen) setDefaultOutputFor(sourceFile);
         setStatus("Lendo duração, resolução e quadros de prévia…", false);
@@ -408,6 +427,11 @@ public class ClipEditorPanel extends JPanel {
                 if (!selectedSource.equals(sourceFile)) return;
                 try {
                     loadedMedia = get();
+                    muteButton.setEnabled(loadedMedia.hasAudio);
+                    muteButton.setToolTipText(loadedMedia.hasAudio
+                            ? "Ativar ou silenciar o áudio da prévia"
+                            : "Este vídeo não possui uma faixa de áudio.");
+                    updateMuteButton();
                     long duration = Math.max(1, (long) Math.ceil(loadedMedia.durationSeconds));
                     long initialEnd = Math.min(30, duration);
                     startField.setText("00:00:00");
@@ -421,6 +445,8 @@ public class ClipEditorPanel extends JPanel {
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() == null ? ex : ex.getCause();
                     preview.setText("Não foi possível abrir a prévia deste vídeo.");
+                    muteButton.setEnabled(false);
+                    muteButton.setText("Áudio indisponível");
                     setStatus(cause.getMessage(), true);
                 }
             }
@@ -602,16 +628,22 @@ public class ClipEditorPanel extends JPanel {
         timeline.setPlaying(true);
         final File playingFile = sourceFile;
         final long selectionEnd = end;
+        final long generation = ++playbackGeneration;
         new Thread(() -> {
             Process process = null;
             try {
+                if (generation != playbackGeneration) return;
                 long remaining = Math.max(1, selectionEnd - playbackStart);
                 java.util.List<String> command = java.util.Arrays.asList(ffmpegExecutable(), "-hide_banner", "-loglevel", "error",
                         "-ss", Long.toString(playbackStart), "-re", "-i", playingFile.getAbsolutePath(), "-t", Long.toString(remaining),
                         "-vf", "fps=15,scale=960:540:force_original_aspect_ratio=decrease", "-an", "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "6", "pipe:1");
                 process = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                if (generation != playbackGeneration) { process.destroyForcibly(); return; }
                 previewProcess = process;
                 final Process activeProcess = process;
+                if (loadedMedia != null && loadedMedia.hasAudio) {
+                    startAudioPreview(playingFile, playbackStart, remaining, generation);
+                }
                 byte[] bytes = new byte[8192];
                 ByteArrayOutputStream frame = null;
                 int previous = -1;
@@ -647,9 +679,10 @@ public class ClipEditorPanel extends JPanel {
             } catch (Exception ignored) {
                 if (process != null) process.destroyForcibly();
             } finally {
+                if (generation == playbackGeneration) stopAudioStream();
                 Process finishedProcess = process;
                 SwingUtilities.invokeLater(() -> {
-                    if (previewProcess == finishedProcess) {
+                    if (generation == playbackGeneration && finishedProcess != null && previewProcess == finishedProcess) {
                         previewProcess = null;
                         playButton.setText("▶ Reproduzir seleção");
                         timeline.setPlaying(false);
@@ -665,11 +698,67 @@ public class ClipEditorPanel extends JPanel {
     }
 
     private void stopPlayback() {
+        playbackGeneration++;
         Process process = previewProcess;
         previewProcess = null;
         if (process != null) process.destroyForcibly();
+        stopAudioStream();
         playButton.setText("▶ Reproduzir seleção");
         timeline.setPlaying(false);
+    }
+
+    private void startAudioPreview(File file, long start, long duration, long generation) {
+        Thread audioThread = new Thread(() -> {
+            Process process = null;
+            SourceDataLine line = null;
+            try {
+                if (generation != playbackGeneration) return;
+                AudioFormat format = new AudioFormat(44100, 16, 2, true, false);
+                line = (SourceDataLine) AudioSystem.getLine(new DataLine.Info(SourceDataLine.class, format));
+                line.open(format, 8192);
+                line.start();
+                audioLine = line;
+                java.util.List<String> command = java.util.Arrays.asList(ffmpegExecutable(), "-hide_banner", "-loglevel", "error",
+                        "-ss", Long.toString(start), "-re", "-i", file.getAbsolutePath(), "-t", Long.toString(duration),
+                        "-map", "0:a:0?", "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", "-f", "s16le", "pipe:1");
+                process = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                audioProcess = process;
+                if (generation != playbackGeneration) { process.destroyForcibly(); return; }
+                byte[] buffer = new byte[8192];
+                int count;
+                try (java.io.InputStream audio = process.getInputStream()) {
+                    while (generation == playbackGeneration && (count = audio.read(buffer)) != -1) {
+                        if (previewMuted) java.util.Arrays.fill(buffer, 0, count, (byte) 0);
+                        line.write(buffer, 0, count);
+                    }
+                }
+                process.waitFor();
+            } catch (Exception error) {
+                if (generation == playbackGeneration && !previewMuted) {
+                    SwingUtilities.invokeLater(() -> setStatus("O vídeo está tocando, mas não foi possível reproduzir o áudio: " + error.getMessage(), true));
+                }
+            } finally {
+                if (process != null) process.destroy();
+                if (audioProcess == process) audioProcess = null;
+                if (line != null) {
+                    if (audioLine == line) audioLine = null;
+                    try { line.flush(); line.stop(); line.close(); } catch (Exception ignored) { }
+                }
+            }
+        }, "clip-audio-preview");
+        audioThread.setDaemon(true);
+        audioThread.start();
+    }
+
+    private void stopAudioStream() {
+        Process process = audioProcess;
+        audioProcess = null;
+        if (process != null) process.destroyForcibly();
+        SourceDataLine line = audioLine;
+        audioLine = null;
+        if (line != null) {
+            try { line.flush(); line.stop(); line.close(); } catch (Exception ignored) { }
+        }
     }
 
     private void setPlayheadFromTimeline(double seconds) {
@@ -903,8 +992,8 @@ public class ClipEditorPanel extends JPanel {
     }
 
     private MediaInfo probeMedia(File file) throws Exception {
-        java.util.List<String> command = java.util.Arrays.asList(ffprobeExecutable(), "-v", "error", "-select_streams", "v:0",
-                "-show_entries", "stream=width,height:format=duration", "-of", "default=noprint_wrappers=1", file.getAbsolutePath());
+        java.util.List<String> command = java.util.Arrays.asList(ffprobeExecutable(), "-v", "error",
+                "-show_entries", "stream=width,height,codec_type:format=duration", "-of", "default=noprint_wrappers=1", file.getAbsolutePath());
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
         StringBuilder output = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -915,13 +1004,15 @@ public class ClipEditorPanel extends JPanel {
         if (result != 0) throw new java.io.IOException("Não consegui ler os dados do vídeo. Verifique se o FFprobe está na mesma pasta do FFmpeg e se o arquivo é válido. " + output.toString().trim());
         int width = -1, height = -1;
         double duration = -1;
+        boolean hasAudio = false;
         for (String line : output.toString().split("\\R")) {
-            if (line.startsWith("width=")) width = Integer.parseInt(line.substring(6).trim());
-            else if (line.startsWith("height=")) height = Integer.parseInt(line.substring(7).trim());
+            if (line.startsWith("width=") && width < 0) width = Integer.parseInt(line.substring(6).trim());
+            else if (line.startsWith("height=") && height < 0) height = Integer.parseInt(line.substring(7).trim());
+            else if (line.equals("codec_type=audio")) hasAudio = true;
             else if (line.startsWith("duration=")) duration = Double.parseDouble(line.substring(9).trim());
         }
         if (width <= 0 || height <= 0 || duration <= 0) throw new java.io.IOException("O FFprobe não encontrou duração e resolução válidas neste arquivo.");
-        return new MediaInfo(width, height, duration);
+        return new MediaInfo(width, height, duration, hasAudio);
     }
 
     private String formatDuration(double seconds) {
@@ -1059,11 +1150,13 @@ public class ClipEditorPanel extends JPanel {
         final int width;
         final int height;
         final double durationSeconds;
+        final boolean hasAudio;
         java.util.List<BufferedImage> thumbnails = java.util.Collections.emptyList();
-        MediaInfo(int width, int height, double durationSeconds) {
+        MediaInfo(int width, int height, double durationSeconds, boolean hasAudio) {
             this.width = width;
             this.height = height;
             this.durationSeconds = durationSeconds;
+            this.hasAudio = hasAudio;
         }
     }
 
@@ -1094,6 +1187,19 @@ public class ClipEditorPanel extends JPanel {
         status.setText(message);
         status.setForeground(error ? new Color(239, 115, 115) : new Color(165, 175, 190));
         status.setCaretPosition(0);
+    }
+
+    private void updateMuteButton() {
+        if (loadedMedia == null) {
+            muteButton.setText("Carregando áudio…");
+            muteButton.setEnabled(false);
+        } else if (!loadedMedia.hasAudio) {
+            muteButton.setText("Sem faixa de áudio");
+            muteButton.setEnabled(false);
+        } else {
+            muteButton.setText(previewMuted ? "🔇 Som mudo" : "🔊 Som ligado");
+            muteButton.setEnabled(true);
+        }
     }
 
     private void showError(String message) {

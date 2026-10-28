@@ -32,8 +32,11 @@ public class LoginFrame extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         // Janela redimensionável com o mouse e com tamanho mínimo seguro
-        setSize(1120, 760);
-        setMinimumSize(new Dimension(560, 540));
+        Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        int initialWidth = Math.max(320, Math.min(1120, usable.width - 24));
+        int initialHeight = Math.max(420, Math.min(760, usable.height - 24));
+        setSize(initialWidth, initialHeight);
+        setMinimumSize(new Dimension(Math.min(560, initialWidth), Math.min(500, initialHeight)));
         setResizable(true);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
@@ -50,7 +53,7 @@ public class LoginFrame extends JFrame {
         addComponentListener(new java.awt.event.ComponentAdapter() {
             private boolean compact;
             @Override public void componentResized(java.awt.event.ComponentEvent e) {
-                boolean shouldCollapse = getWidth() < 900;
+                boolean shouldCollapse = getWidth() < 900 || getHeight() < 720;
                 if (shouldCollapse != compact) {
                     compact = shouldCollapse;
                     if (compact) mainSplit.remove(presentation);
@@ -337,7 +340,7 @@ public class LoginFrame extends JFrame {
         status.setEditable(false);
         status.setFocusable(false);
         status.setLineWrap(true);
-        status.setWrapStyleWord(false);
+        status.setWrapStyleWord(true);
         status.setOpaque(false);
         status.setBorder(new EmptyBorder(2, 4, 2, 4));
         status.setRows(1);
@@ -594,11 +597,11 @@ public class LoginFrame extends JFrame {
      */
     private void abrirDialogConfiguracaoOAuth(boolean autoExecutarAposSalvar) {
         JDialog dialog = new JDialog(this, "Credenciais do Google Cloud OAuth 2.0 Real", true);
-        Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
-        int dialogWidth = Math.min(640, Math.max(360, screen.width - 64));
-        int dialogHeight = Math.min(680, Math.max(480, screen.height - 96));
+        Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        int dialogWidth = Math.min(640, Math.max(320, usable.width - 48));
+        int dialogHeight = Math.min(680, Math.max(360, usable.height - 48));
         dialog.setSize(dialogWidth, dialogHeight);
-        dialog.setMinimumSize(new Dimension(Math.min(420, dialogWidth), Math.min(480, dialogHeight)));
+        dialog.setMinimumSize(new Dimension(Math.min(360, dialogWidth), Math.min(360, dialogHeight)));
         dialog.setResizable(true);
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new BorderLayout());
@@ -753,8 +756,24 @@ public class LoginFrame extends JFrame {
             }
         });
 
+        final boolean[] stackedButtons = {false};
+        Runnable adaptButtons = () -> {
+            boolean stacked = btnRow.getWidth() < 350;
+            if (stacked == stackedButtons[0] && btnRow.getComponentCount() > 0) return;
+            stackedButtons[0] = stacked;
+            btnRow.removeAll();
+            btnRow.setLayout(stacked ? new GridLayout(2, 1, 0, 8)
+                    : new FlowLayout(FlowLayout.RIGHT, 12, 0));
+            btnRow.add(btnCancelar);
+            btnRow.add(btnSalvar);
+            btnRow.revalidate();
+        };
+        btnRow.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) { adaptButtons.run(); }
+        });
         btnRow.add(btnCancelar);
         btnRow.add(btnSalvar);
+        SwingUtilities.invokeLater(adaptButtons);
         root.add(btnRow, BorderLayout.SOUTH);
         dialog.add(root, BorderLayout.CENTER);
         dialog.setVisible(true);

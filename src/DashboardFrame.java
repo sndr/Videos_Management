@@ -33,6 +33,7 @@ public class DashboardFrame extends JFrame {
     // Layout e Navegação
     private CardLayout cardLayout;
     private JPanel contentContainer;
+    private JPanel analyticsPanel;
 
     // Métricas
     private JLabel lblTotalVideosValor;
@@ -53,6 +54,7 @@ public class DashboardFrame extends JFrame {
     private JButton btnNavNovo;
     private JButton btnNavAnalytics;
     private JButton btnNavConfig;
+    private JButton btnNavClips;
 
     public DashboardFrame(GoogleUser user) {
         super("Videos Management Studio - " + user.getName());
@@ -73,8 +75,9 @@ public class DashboardFrame extends JFrame {
             @Override protected void done() {
                 try {
                     videoList.clear(); videoList.addAll(get()); atualizarTabela(); recalcularMetricas();
-                    contentContainer.remove(2);
-                    contentContainer.add(criarPainelAnalytics(), "ANALYTICS");
+                    contentContainer.remove(analyticsPanel);
+                    analyticsPanel = criarPainelAnalytics();
+                    contentContainer.add(analyticsPanel, "ANALYTICS");
                     contentContainer.revalidate(); contentContainer.repaint();
                     if (videoList.isEmpty()) JOptionPane.showMessageDialog(DashboardFrame.this,
                             "A conta autenticada não possui vídeos na playlist de uploads.", "YouTube", JOptionPane.INFORMATION_MESSAGE);
@@ -89,8 +92,11 @@ public class DashboardFrame extends JFrame {
 
     private void initUI() {
         // Janela principal 100% redimensionável com o mouse
-        setSize(1180, 760);
-        setMinimumSize(new Dimension(940, 580));
+        Rectangle usableScreen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        int initialWidth = Math.max(640, Math.min(1180, usableScreen.width - 24));
+        int initialHeight = Math.max(460, Math.min(760, usableScreen.height - 24));
+        setSize(initialWidth, initialHeight);
+        setMinimumSize(new Dimension(Math.min(760, initialWidth), Math.min(520, initialHeight)));
         setResizable(true);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
@@ -109,7 +115,9 @@ public class DashboardFrame extends JFrame {
 
         contentContainer.add(criarPainelGerenciarVideos(), "VIDEOS");
         contentContainer.add(criarPainelNovoVideo(), "NOVO_VIDEO");
-        contentContainer.add(criarPainelAnalytics(), "ANALYTICS");
+        contentContainer.add(new ClipEditorPanel(this), "CLIP_EDITOR");
+        analyticsPanel = criarPainelAnalytics();
+        contentContainer.add(analyticsPanel, "ANALYTICS");
         contentContainer.add(criarPainelConfiguracoes(), "CONFIGURACOES");
 
         add(contentContainer, BorderLayout.CENTER);
@@ -224,6 +232,17 @@ public class DashboardFrame extends JFrame {
 
         header.add(brandBox, BorderLayout.WEST);
         header.add(userBox, BorderLayout.EAST);
+        header.addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent e) {
+                boolean compact = header.getWidth() < 900;
+                lblUserEmail.setVisible(!compact);
+                lblTitle.setText(compact ? "VIDEOS MANAGEMENT" : "VIDEOS MANAGEMENT STUDIO");
+                lblBadge.setText(compact
+                        ? (currentUser.isGuest() ? " ● Convidado " : " ● Google ")
+                        : (currentUser.isGuest() ? " ● Modo convidado " : " ● Conectado ao Google "));
+                header.revalidate();
+            }
+        });
         return header;
     }
 
@@ -250,6 +269,7 @@ public class DashboardFrame extends JFrame {
         btnNavNovo = criarBotaoMenuModerno("➕", "Novo Vídeo", false);
         btnNavAnalytics = criarBotaoMenuModerno("📊", "Analytics & Métricas", false);
         btnNavConfig = criarBotaoMenuModerno("⚙️", "Configurações", false);
+        btnNavClips = criarBotaoMenuModerno("✂", "Editor de Clipes", false);
 
         btnNavVideos.addActionListener(e -> {
             atualizarSelecaoMenu(btnNavVideos);
@@ -266,12 +286,18 @@ public class DashboardFrame extends JFrame {
             cardLayout.show(contentContainer, "ANALYTICS");
         });
 
+        btnNavClips.addActionListener(e -> {
+            atualizarSelecaoMenu(btnNavClips);
+            cardLayout.show(contentContainer, "CLIP_EDITOR");
+        });
+
         btnNavConfig.addActionListener(e -> {
             atualizarSelecaoMenu(btnNavConfig);
             cardLayout.show(contentContainer, "CONFIGURACOES");
         });
 
         sidebar.add(btnNavVideos);
+        sidebar.add(btnNavClips);
         sidebar.add(btnNavAnalytics);
         sidebar.add(Box.createRigidArea(new Dimension(0, 8)));
         sidebar.add(btnNavConfig);
@@ -349,7 +375,7 @@ public class DashboardFrame extends JFrame {
     }
 
     private void atualizarSelecaoMenu(JButton selecionado) {
-        JButton[] buttons = {btnNavVideos, btnNavNovo, btnNavAnalytics, btnNavConfig};
+        JButton[] buttons = {btnNavVideos, btnNavNovo, btnNavClips, btnNavAnalytics, btnNavConfig};
         for (JButton b : buttons) {
             JLabel txt = (JLabel) ((BorderLayout) b.getLayout()).getLayoutComponent(BorderLayout.CENTER);
             aplicarEstiloBotao(b, txt, b == selecionado);
@@ -365,9 +391,8 @@ public class DashboardFrame extends JFrame {
         panel.setBorder(new EmptyBorder(24, 28, 24, 28));
 
         // 1. CARDS DE MÉTRICAS COM GAPS PROPORCIONAIS (18px)
-        JPanel cardsRow = new JPanel(new GridLayout(1, 4, 18, 0));
+        JPanel cardsRow = new JPanel(new GridLayout(0, 4, 18, 12));
         cardsRow.setOpaque(false);
-        cardsRow.setPreferredSize(new Dimension(800, 110));
 
         lblTotalVideosValor = new JLabel("0");
         lblTotalViewsValor = new JLabel("0");
@@ -378,6 +403,7 @@ public class DashboardFrame extends JFrame {
         cardsRow.add(criarCardMetrica("Visualizações Totais", lblTotalViewsValor, "+14.2% este mês", new Color(46, 204, 113)));
         cardsRow.add(criarCardMetrica("Total de Curtidas", lblTotalLikesValor, "Engajamento ativo", new Color(155, 89, 182)));
         cardsRow.add(criarCardMetrica("Vídeos no Ar", lblVideosPublicadosValor, "Públicos no YouTube", new Color(243, 156, 18)));
+        installResponsiveGrid(cardsRow, 4, 190, 18, 12, 4);
 
         panel.add(cardsRow, BorderLayout.NORTH);
 
@@ -386,16 +412,16 @@ public class DashboardFrame extends JFrame {
         centerPanel.setOpaque(false);
 
         // Barra de Ações com altura padronizada de 36px para todos os elementos
-        JPanel toolbar = new JPanel(new BorderLayout(14, 0));
+        JPanel toolbar = new JPanel();
+        toolbar.setLayout(new BoxLayout(toolbar, BoxLayout.Y_AXIS));
         toolbar.setOpaque(false);
-        toolbar.setPreferredSize(new Dimension(800, 38));
 
         // Filtros (Esquerda) com gap de 12px entre si
-        JPanel filtersBox = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        JPanel filtersBox = new JPanel(new GridLayout(0, 3, 8, 8));
         filtersBox.setOpaque(false);
 
         txtPesquisa = new JTextField(18);
-        txtPesquisa.setPreferredSize(new Dimension(220, 36));
+        txtPesquisa.setPreferredSize(new Dimension(180, 36));
         txtPesquisa.putClientProperty("JTextField.placeholderText", "🔍  Pesquisar por título...");
         txtPesquisa.putClientProperty("JTextField.showClearButton", true);
         txtPesquisa.addKeyListener(new KeyAdapter() {
@@ -416,9 +442,10 @@ public class DashboardFrame extends JFrame {
         filtersBox.add(txtPesquisa);
         filtersBox.add(cbFiltroStatus);
         filtersBox.add(cbFiltroCategoria);
+        installResponsiveGrid(filtersBox, 3, 170, 8, 8, 3);
 
         // Botões CRUD (Direita) com gap de 10px entre si
-        JPanel actionsBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel actionsBox = new JPanel(new GridLayout(0, 4, 8, 8));
         actionsBox.setOpaque(false);
 
         JButton btnAdd = new JButton("➕ Novo Vídeo");
@@ -444,9 +471,13 @@ public class DashboardFrame extends JFrame {
         actionsBox.add(btnEdit);
         actionsBox.add(btnDelete);
         actionsBox.add(btnView);
+        installResponsiveGrid(actionsBox, 4, 125, 8, 8, 4);
 
-        toolbar.add(filtersBox, BorderLayout.WEST);
-        toolbar.add(actionsBox, BorderLayout.EAST);
+        filtersBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+        actionsBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+        toolbar.add(filtersBox);
+        toolbar.add(Box.createRigidArea(new Dimension(0, 8)));
+        toolbar.add(actionsBox);
         centerPanel.add(toolbar, BorderLayout.NORTH);
 
         // Tabela com auto-redimensionamento fluido
@@ -466,7 +497,7 @@ public class DashboardFrame extends JFrame {
         videoTable.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         videoTable.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
         videoTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        videoTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        videoTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 
         // Larguras ajustadas
         videoTable.getColumnModel().getColumn(0).setPreferredWidth(75);   // ID
@@ -477,6 +508,10 @@ public class DashboardFrame extends JFrame {
         videoTable.getColumnModel().getColumn(5).setPreferredWidth(95);   // Likes
         videoTable.getColumnModel().getColumn(6).setPreferredWidth(115);  // Status
         videoTable.getColumnModel().getColumn(7).setPreferredWidth(100);  // Data
+        int[] minimumWidths = {70, 170, 100, 65, 85, 65, 90, 90};
+        for (int column = 0; column < minimumWidths.length; column++) {
+            videoTable.getColumnModel().getColumn(column).setMinWidth(minimumWidths[column]);
+        }
 
         // Renderizadores de Alinhamento com padding interno
         DefaultTableCellRenderer centerRender = new DefaultTableCellRenderer();
@@ -529,6 +564,25 @@ public class DashboardFrame extends JFrame {
 
         panel.add(centerPanel, BorderLayout.CENTER);
         return panel;
+    }
+
+    private void installResponsiveGrid(JPanel grid, int itemCount, int minimumCellWidth,
+                                       int horizontalGap, int verticalGap, int initialColumns) {
+        final int[] currentColumns = {initialColumns};
+        grid.addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent event) {
+                int width = grid.getWidth();
+                if (width <= 0) return;
+                int columns = Math.max(1, Math.min(itemCount,
+                        (width + horizontalGap) / (minimumCellWidth + horizontalGap)));
+                if (itemCount == 4 && columns == 3) columns = 2;
+                if (columns == currentColumns[0]) return;
+                currentColumns[0] = columns;
+                grid.setLayout(new GridLayout(0, columns, horizontalGap, verticalGap));
+                grid.revalidate();
+                if (grid.getParent() != null) grid.getParent().revalidate();
+            }
+        });
     }
 
     private JPanel criarCardMetrica(String titulo, JLabel lblValor, String subtitulo, Color corDestaque) {
@@ -627,8 +681,7 @@ public class DashboardFrame extends JFrame {
      */
     private void abrirModalNovoVideo() {
         JDialog dialog = new JDialog(this, "Cadastrar Novo Vídeo", true);
-        dialog.setSize(580, 650);
-        dialog.setMinimumSize(new Dimension(460, 480));
+        sizeDialogWithinScreen(dialog, new Dimension(580, 650), new Dimension(460, 480));
         dialog.setResizable(true); // Redimensionável com o mouse!
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new BorderLayout());
@@ -773,8 +826,7 @@ public class DashboardFrame extends JFrame {
         Video video = videoList.get(modelRow);
 
         JDialog dialog = new JDialog(this, "Editar Vídeo - " + video.getId(), true);
-        dialog.setSize(580, 650);
-        dialog.setMinimumSize(new Dimension(460, 480));
+        sizeDialogWithinScreen(dialog, new Dimension(580, 650), new Dimension(460, 480));
         dialog.setResizable(true); // Redimensionável com o mouse!
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new BorderLayout());
@@ -918,8 +970,7 @@ public class DashboardFrame extends JFrame {
         Video v = videoList.get(modelRow);
 
         JDialog dialog = new JDialog(this, "Detalhes do Vídeo - " + v.getId(), true);
-        dialog.setSize(560, 520);
-        dialog.setMinimumSize(new Dimension(440, 400));
+        sizeDialogWithinScreen(dialog, new Dimension(560, 520), new Dimension(440, 400));
         dialog.setResizable(true); // Redimensionável com o mouse!
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new BorderLayout());
@@ -1096,6 +1147,15 @@ public class DashboardFrame extends JFrame {
         if (value == null) return "";
         return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 .replace("\"", "&quot;").replace("'", "&#39;");
+    }
+
+    private void sizeDialogWithinScreen(JDialog dialog, Dimension preferred, Dimension minimum) {
+        Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        int width = Math.max(320, Math.min(preferred.width, usable.width - 24));
+        int height = Math.max(300, Math.min(preferred.height, usable.height - 24));
+        dialog.setSize(width, height);
+        dialog.setMinimumSize(new Dimension(Math.min(minimum.width, width), Math.min(minimum.height, height)));
+        dialog.setLocationRelativeTo(this);
     }
 
     private void alterarPrivacidadeVideo(Video video, JDialog dialog, JButton actionButton) {

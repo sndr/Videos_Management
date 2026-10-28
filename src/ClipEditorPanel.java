@@ -106,7 +106,7 @@ public class ClipEditorPanel extends JPanel {
         addRow(card, g, 2, "Prévia e seleção visual do trecho", createPreviewEditor());
         addRow(card, g, 4, "Salvar clipe como", createFileRow(outputField, "Escolher destino…", this::chooseOutput));
 
-        JPanel times = new JPanel(new GridLayout(1, 2, 18, 0));
+        JPanel times = new JPanel(new GridLayout(1, 2, 18, 8));
         times.setOpaque(false);
         times.add(createTimeField("Início (HH:MM:SS)", startField));
         times.add(createTimeField("Fim (HH:MM:SS)", endField));
@@ -118,6 +118,7 @@ public class ClipEditorPanel extends JPanel {
         };
         startField.getDocument().addDocumentListener(rangeListener);
         endField.getDocument().addDocumentListener(rangeListener);
+        installResponsiveGrid(times, 2, 210, 18, 8, 2);
         addRow(card, g, 6, "Ajuste preciso do trecho (opcional)", times);
 
         JPanel qualityInfo = new JPanel();
@@ -127,9 +128,16 @@ public class ClipEditorPanel extends JPanel {
         JLabel qualityTitle = new JLabel("Resolução original · H.264 CRF 18 · áudio AAC 192 kb/s");
         qualityTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
         qualityTitle.setForeground(new Color(195, 215, 242));
-        JLabel qualityDescription = new JLabel("Mantém as dimensões do vídeo fonte sem ampliar vídeos pequenos. O arquivo original não é alterado.");
+        JTextArea qualityDescription = new JTextArea("Mantém as dimensões do vídeo fonte sem ampliar vídeos pequenos. O arquivo original não é alterado.");
         qualityDescription.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         qualityDescription.setForeground(new Color(165, 180, 202));
+        qualityDescription.setOpaque(false);
+        qualityDescription.setEditable(false);
+        qualityDescription.setFocusable(false);
+        qualityDescription.setLineWrap(true);
+        qualityDescription.setWrapStyleWord(true);
+        qualityDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
+        qualityDescription.setMaximumSize(new Dimension(Integer.MAX_VALUE, 54));
         qualityInfo.add(qualityTitle);
         qualityInfo.add(Box.createVerticalStrut(5));
         qualityInfo.add(qualityDescription);
@@ -163,7 +171,7 @@ public class ClipEditorPanel extends JPanel {
         g.gridy = 11;
         card.add(progress, g);
 
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel actions = new JPanel(new GridLayout(1, 2, 10, 8));
         actions.setOpaque(false);
         cancelButton.setEnabled(false);
         cancelButton.addActionListener(e -> cancelExport());
@@ -173,6 +181,7 @@ public class ClipEditorPanel extends JPanel {
         exportButton.addActionListener(e -> startExport());
         actions.add(cancelButton);
         actions.add(exportButton);
+        installResponsiveGrid(actions, 2, 230, 10, 8, 2);
         g.gridy = 12;
         card.add(actions, g);
 
@@ -197,16 +206,34 @@ public class ClipEditorPanel extends JPanel {
         preview.setForeground(new Color(165, 175, 190));
         preview.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         preview.setPreferredSize(new Dimension(800, 450));
-        preview.setMinimumSize(new Dimension(480, 270));
+        preview.setMinimumSize(new Dimension(320, 180));
         preview.setBorder(BorderFactory.createLineBorder(new Color(60, 68, 82)));
         preview.addComponentListener(new java.awt.event.ComponentAdapter() {
             @Override public void componentResized(java.awt.event.ComponentEvent e) {
                 if (currentPreviewFrame != null) showPreviewFrame(currentPreviewFrame);
             }
         });
+        editor.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                int width = Math.max(320, Math.min(900, editor.getWidth()));
+                int height = Math.max(180, Math.min(506, width * 9 / 16));
+                Dimension target = new Dimension(width, height);
+                boolean changed = false;
+                if (!target.equals(preview.getPreferredSize())) {
+                    preview.setPreferredSize(target);
+                    changed = true;
+                }
+                Dimension timelineSize = new Dimension(width, 76);
+                if (!timelineSize.equals(timeline.getPreferredSize())) {
+                    timeline.setPreferredSize(timelineSize);
+                    changed = true;
+                }
+                if (changed) editor.revalidate();
+            }
+        });
         editor.add(preview, BorderLayout.CENTER);
 
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel controls = new JPanel(new GridLayout(1, 6, 8, 6));
         controls.setOpaque(false);
         JButton back = new JButton("−1s");
         JButton forward = new JButton("+1s");
@@ -215,6 +242,7 @@ public class ClipEditorPanel extends JPanel {
             button.setFocusPainted(false);
             controls.add(button);
         }
+        installResponsiveControls(controls);
         playButton.setBackground(new Color(66, 133, 244));
         playButton.setForeground(Color.WHITE);
         playButton.addActionListener(e -> togglePlayback());
@@ -226,7 +254,7 @@ public class ClipEditorPanel extends JPanel {
 
         JPanel timelineBox = new JPanel(new BorderLayout(0, 6));
         timelineBox.setOpaque(false);
-        timeline.setPreferredSize(new Dimension(800, 76));
+        timeline.setPreferredSize(new Dimension(640, 76));
         timeline.setFocusable(true);
         timeline.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("LEFT"), "seek-back");
         timeline.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("RIGHT"), "seek-forward");
@@ -239,13 +267,33 @@ public class ClipEditorPanel extends JPanel {
         timeline.getActionMap().put("mark-in", new AbstractAction() { @Override public void actionPerformed(java.awt.event.ActionEvent e) { setRangeStart((long) playheadSeconds); } });
         timeline.getActionMap().put("mark-out", new AbstractAction() { @Override public void actionPerformed(java.awt.event.ActionEvent e) { setRangeEnd((long) playheadSeconds); } });
         timelineBox.add(timeline, BorderLayout.CENTER);
-        JPanel timelineInfo = new JPanel(new BorderLayout());
+        JPanel timelineInfo = new JPanel(new BorderLayout(8, 4));
         timelineInfo.setOpaque(false);
         playheadLabel.setForeground(new Color(185, 195, 210));
-        timelineInfo.add(playheadLabel, BorderLayout.WEST);
         JLabel hint = new JLabel("Arraste as alças para escolher início e fim; clique na linha do tempo para buscar.");
         hint.setForeground(new Color(145, 155, 172));
-        timelineInfo.add(hint, BorderLayout.EAST);
+        final boolean[] stackedInfo = {false};
+        Runnable updateTimelineInfo = () -> {
+            boolean stacked = timelineInfo.getWidth() < 700;
+            if (stacked == stackedInfo[0] && timelineInfo.getComponentCount() > 0) return;
+            stackedInfo[0] = stacked;
+            timelineInfo.removeAll();
+            if (stacked) {
+                timelineInfo.setLayout(new BoxLayout(timelineInfo, BoxLayout.Y_AXIS));
+                hint.setText("Arraste as alças para marcar o corte ou clique para buscar.");
+                timelineInfo.add(playheadLabel);
+                timelineInfo.add(hint);
+            } else {
+                timelineInfo.setLayout(new BorderLayout(8, 4));
+                hint.setText("Arraste as alças para escolher início e fim; clique na linha do tempo para buscar.");
+                timelineInfo.add(playheadLabel, BorderLayout.WEST);
+                timelineInfo.add(hint, BorderLayout.EAST);
+            }
+            timelineInfo.revalidate();
+        };
+        timelineInfo.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) { updateTimelineInfo.run(); }
+        });
         timelineBox.add(timelineInfo, BorderLayout.SOUTH);
 
         JPanel bottom = new JPanel(new BorderLayout(0, 8));
@@ -254,6 +302,40 @@ public class ClipEditorPanel extends JPanel {
         bottom.add(timelineBox, BorderLayout.CENTER);
         editor.add(bottom, BorderLayout.SOUTH);
         return editor;
+    }
+
+    private void installResponsiveGrid(JPanel grid, int itemCount, int minimumCellWidth,
+                                       int horizontalGap, int verticalGap, int initialColumns) {
+        final int[] currentColumns = {initialColumns};
+        grid.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                int width = grid.getWidth();
+                if (width <= 0) return;
+                int columns = Math.max(1, Math.min(itemCount,
+                        (width + horizontalGap) / (minimumCellWidth + horizontalGap)));
+                if (columns == currentColumns[0]) return;
+                currentColumns[0] = columns;
+                grid.setLayout(new GridLayout(0, columns, horizontalGap, verticalGap));
+                grid.revalidate();
+                if (grid.getParent() != null) grid.getParent().revalidate();
+            }
+        });
+    }
+
+    private void installResponsiveControls(JPanel controls) {
+        final int[] currentColumns = {6};
+        controls.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                int width = controls.getWidth();
+                if (width <= 0) return;
+                int columns = width >= 900 ? 6 : width >= 520 ? 3 : 2;
+                if (columns == currentColumns[0]) return;
+                currentColumns[0] = columns;
+                controls.setLayout(new GridLayout(0, columns, 8, 6));
+                controls.revalidate();
+                if (controls.getParent() != null) controls.getParent().revalidate();
+            }
+        });
     }
 
     private void addRow(JPanel panel, GridBagConstraints g, int row, String label, JComponent input) {

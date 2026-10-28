@@ -33,6 +33,7 @@ public class DashboardFrame extends JFrame {
     // Layout e Navegação
     private CardLayout cardLayout;
     private JPanel contentContainer;
+    private JPanel analyticsPanel;
 
     // Métricas
     private JLabel lblTotalVideosValor;
@@ -74,8 +75,9 @@ public class DashboardFrame extends JFrame {
             @Override protected void done() {
                 try {
                     videoList.clear(); videoList.addAll(get()); atualizarTabela(); recalcularMetricas();
-                    contentContainer.remove(2);
-                    contentContainer.add(criarPainelAnalytics(), "ANALYTICS");
+                    contentContainer.remove(analyticsPanel);
+                    analyticsPanel = criarPainelAnalytics();
+                    contentContainer.add(analyticsPanel, "ANALYTICS");
                     contentContainer.revalidate(); contentContainer.repaint();
                     if (videoList.isEmpty()) JOptionPane.showMessageDialog(DashboardFrame.this,
                             "A conta autenticada não possui vídeos na playlist de uploads.", "YouTube", JOptionPane.INFORMATION_MESSAGE);
@@ -111,7 +113,8 @@ public class DashboardFrame extends JFrame {
         contentContainer.add(criarPainelGerenciarVideos(), "VIDEOS");
         contentContainer.add(criarPainelNovoVideo(), "NOVO_VIDEO");
         contentContainer.add(new ClipEditorPanel(this), "CLIP_EDITOR");
-        contentContainer.add(criarPainelAnalytics(), "ANALYTICS");
+        analyticsPanel = criarPainelAnalytics();
+        contentContainer.add(analyticsPanel, "ANALYTICS");
         contentContainer.add(criarPainelConfiguracoes(), "CONFIGURACOES");
 
         add(contentContainer, BorderLayout.CENTER);

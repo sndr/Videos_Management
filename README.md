@@ -49,6 +49,15 @@ O modo convidado é apenas para desenvolvimento: ele não consulta o YouTube e n
 
 **Limitação:** os botões **Novo Vídeo**, **Editar** e **Excluir** ainda não fazem upload, atualização de metadados ou exclusão no YouTube. Essas ações só alteram a lista local da sessão. O botão de visibilidade em **Detalhes** é a ação que atualiza o vídeo real no YouTube.
 
+## Cortar clipes locais
+
+1. Instale o [FFmpeg](https://ffmpeg.org/download.html) e deixe `ffmpeg.exe` no `PATH`, ou use **Localizar FFmpeg** no editor para escolher o executável. O caminho escolhido fica salvo nas preferências locais do aplicativo.
+2. No dashboard, abra **Editor de Clipes** e selecione o arquivo original que está salvo no computador.
+3. Informe início e fim no formato `HH:MM:SS`. Cada clipe exportado pode ter até cinco minutos.
+4. Escolha o destino e exporte. O vídeo é recodificado em MP4 (H.264, CRF 18) e o áudio em AAC 192 kb/s; o arquivo original não é alterado.
+
+O corte usa recodificação para manter alta qualidade e permitir cortes precisos. O resultado é visualmente próximo do original, mas a recodificação pode alterar ligeiramente a imagem e o áudio. Use o arquivo fonte original para obter a melhor qualidade disponível. O dashboard não baixa vídeos do YouTube e a API não fornece o arquivo original enviado ao canal.
+
 ## Credenciais e sessão local
 
 - As credenciais OAuth importadas são guardadas em `.google_oauth_credentials.properties` dentro da pasta pessoal do usuário do sistema, fora do repositório.

@@ -53,6 +53,7 @@ public class DashboardFrame extends JFrame {
     private JButton btnNavNovo;
     private JButton btnNavAnalytics;
     private JButton btnNavConfig;
+    private JButton btnNavClips;
 
     public DashboardFrame(GoogleUser user) {
         super("Videos Management Studio - " + user.getName());
@@ -109,6 +110,7 @@ public class DashboardFrame extends JFrame {
 
         contentContainer.add(criarPainelGerenciarVideos(), "VIDEOS");
         contentContainer.add(criarPainelNovoVideo(), "NOVO_VIDEO");
+        contentContainer.add(new ClipEditorPanel(this), "CLIP_EDITOR");
         contentContainer.add(criarPainelAnalytics(), "ANALYTICS");
         contentContainer.add(criarPainelConfiguracoes(), "CONFIGURACOES");
 
@@ -250,6 +252,7 @@ public class DashboardFrame extends JFrame {
         btnNavNovo = criarBotaoMenuModerno("➕", "Novo Vídeo", false);
         btnNavAnalytics = criarBotaoMenuModerno("📊", "Analytics & Métricas", false);
         btnNavConfig = criarBotaoMenuModerno("⚙️", "Configurações", false);
+        btnNavClips = criarBotaoMenuModerno("✂", "Editor de Clipes", false);
 
         btnNavVideos.addActionListener(e -> {
             atualizarSelecaoMenu(btnNavVideos);
@@ -266,12 +269,18 @@ public class DashboardFrame extends JFrame {
             cardLayout.show(contentContainer, "ANALYTICS");
         });
 
+        btnNavClips.addActionListener(e -> {
+            atualizarSelecaoMenu(btnNavClips);
+            cardLayout.show(contentContainer, "CLIP_EDITOR");
+        });
+
         btnNavConfig.addActionListener(e -> {
             atualizarSelecaoMenu(btnNavConfig);
             cardLayout.show(contentContainer, "CONFIGURACOES");
         });
 
         sidebar.add(btnNavVideos);
+        sidebar.add(btnNavClips);
         sidebar.add(btnNavAnalytics);
         sidebar.add(Box.createRigidArea(new Dimension(0, 8)));
         sidebar.add(btnNavConfig);
@@ -349,7 +358,7 @@ public class DashboardFrame extends JFrame {
     }
 
     private void atualizarSelecaoMenu(JButton selecionado) {
-        JButton[] buttons = {btnNavVideos, btnNavNovo, btnNavAnalytics, btnNavConfig};
+        JButton[] buttons = {btnNavVideos, btnNavNovo, btnNavClips, btnNavAnalytics, btnNavConfig};
         for (JButton b : buttons) {
             JLabel txt = (JLabel) ((BorderLayout) b.getLayout()).getLayoutComponent(BorderLayout.CENTER);
             aplicarEstiloBotao(b, txt, b == selecionado);

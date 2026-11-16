@@ -61,7 +61,7 @@ public class LoginFrame extends JFrame {
                     mainSplit.revalidate();
                 }
                 if (!compact) {
-                    Dimension target = new Dimension(Math.max(280, Math.min(420, (int) (getWidth() * 0.26))), Math.max(1, getHeight()));
+                    Dimension target = new Dimension(Math.max(360, Math.min(430, (int) (getWidth() * 0.38))), Math.max(1, getHeight()));
                     if (!target.equals(presentation.getPreferredSize())) {
                         presentation.setPreferredSize(target);
                         mainSplit.revalidate();
@@ -102,7 +102,7 @@ public class LoginFrame extends JFrame {
 
         heroPanel.setPreferredSize(new Dimension(420, 700));
         heroPanel.setLayout(new BoxLayout(heroPanel, BoxLayout.Y_AXIS));
-        heroPanel.setBorder(new EmptyBorder(48, 42, 40, 42));
+        heroPanel.setBorder(new EmptyBorder(42, 36, 32, 36));
 
         // 1. Badge superior
         JLabel lblTag = new JLabel("YOUTUBE CREATOR STUDIO");
@@ -118,11 +118,11 @@ public class LoginFrame extends JFrame {
         lblLogo.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel lblTitle = new JLabel("Videos Management");
-        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 29));
+        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 26));
         lblTitle.setForeground(Color.WHITE);
         lblTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblSubtitle = new JLabel("<html><div style='width:260px'>Acesse seu canal e seus vídeos do YouTube em um só lugar.</div></html>");
+        JLabel lblSubtitle = new JLabel("<html><div style='width:250px'>Acesse seu canal e seus vídeos do YouTube em um só lugar.</div></html>");
         lblSubtitle.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         lblSubtitle.setForeground(new Color(185, 197, 216));
         lblSubtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -162,6 +162,14 @@ public class LoginFrame extends JFrame {
         scrollLeft.setBorder(null);
         scrollLeft.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scrollLeft.getVerticalScrollBar().setUnitIncrement(14);
+        scrollLeft.getViewport().addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                int width = scrollLeft.getViewport().getExtentSize().width;
+                if (width <= 0 || width == heroPanel.getPreferredSize().width) return;
+                heroPanel.setPreferredSize(new Dimension(width, heroPanel.getPreferredSize().height));
+                heroPanel.revalidate();
+            }
+        });
         return scrollLeft;
     }
 
@@ -178,12 +186,12 @@ public class LoginFrame extends JFrame {
         textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
         textPanel.setOpaque(false);
 
-        JLabel lblT = new JLabel(titulo);
-        lblT.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        JLabel lblT = new JLabel("<html><div style='width:240px'>" + titulo + "</div></html>");
+        lblT.setFont(new Font("Segoe UI", Font.BOLD, 11));
         lblT.setForeground(new Color(225, 232, 242));
         lblT.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblD = new JLabel("<html>" + descricao + "</html>");
+        JLabel lblD = new JLabel("<html><div style='width:240px'>" + descricao + "</div></html>");
         lblD.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         lblD.setForeground(new Color(140, 150, 165));
         lblD.setAlignmentX(Component.LEFT_ALIGNMENT);

@@ -57,8 +57,12 @@ public class ClipEditorPanel extends JPanel {
     private volatile long playbackGeneration;
     private volatile Process frameProcess;
     private BufferedImage currentPreviewFrame;
-    private long playbackStart;
+    private double playbackStart;
     private int playbackFrame;
+    private volatile boolean playbackPaused;
+    private volatile boolean playbackStarting;
+    private volatile boolean exportOutputMayBePartial;
+    private volatile boolean exportCompletedSuccessfully;
     private int frameRequestId;
     private SwingWorker<MediaInfo, Void> loadWorker;
     private SwingWorker<java.util.List<BufferedImage>, Void> thumbnailWorker;
@@ -101,24 +105,31 @@ public class ClipEditorPanel extends JPanel {
     }
 
     private JComponent createEditorCard() {
-        JPanel card = new JPanel(new GridBagLayout());
+        JPanel card = new VerticalScrollablePanel();
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setBackground(new Color(44, 49, 60));
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(55, 62, 75), 1, true),
-                new EmptyBorder(24, 26, 24, 26)));
-        GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(8, 8, 8, 8);
-        g.fill = GridBagConstraints.HORIZONTAL;
-        g.weightx = 1;
+        card.setBorder(new EmptyBorder(16, 16, 16, 16));
 
-        addRow(card, g, 0, "Arquivo original", createFileRow(sourceField, "Selecionar vídeo…", this::chooseSource));
-        addRow(card, g, 2, "Prévia e seleção visual do trecho", createPreviewEditor());
-        addRow(card, g, 4, "Salvar clipe como", createFileRow(outputField, "Escolher destino…", this::chooseOutput));
+        JPanel previewColumn = new JPanel(new BorderLayout(0, 8));
+        previewColumn.setOpaque(false);
+        JLabel previewTitle = new JLabel("PR\u00c9VIA E RECORTE");
+        previewTitle.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        previewTitle.setForeground(new Color(185, 198, 216));
+        previewColumn.add(previewTitle, BorderLayout.NORTH);
+        previewColumn.add(createPreviewEditor(), BorderLayout.CENTER);
+        previewColumn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(previewColumn);
+        card.add(Box.createVerticalStrut(20));
 
-        JPanel times = new JPanel(new GridLayout(1, 2, 18, 8));
+        JPanel settings = new JPanel();
+        settings.setOpaque(false);
+        settings.setLayout(new BoxLayout(settings, BoxLayout.Y_AXIS));
+        addSettingSection(settings, "V\u00cdDEO ORIGINAL", createFileRow(sourceField, "Selecionar...", this::chooseSource));
+
+        JPanel times = new JPanel(new GridLayout(1, 2, 8, 0));
         times.setOpaque(false);
-        times.add(createTimeField("Início (HH:MM:SS)", startField));
-        times.add(createTimeField("Fim (HH:MM:SS)", endField));
+        times.add(createTimeField("In\u00edcio", startField));
+        times.add(createTimeField("Fim", endField));
         javax.swing.event.DocumentListener rangeListener = new javax.swing.event.DocumentListener() {
             private void changed() { updateTimelineFromFields(); }
             @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { changed(); }
@@ -127,17 +138,17 @@ public class ClipEditorPanel extends JPanel {
         };
         startField.getDocument().addDocumentListener(rangeListener);
         endField.getDocument().addDocumentListener(rangeListener);
-        installResponsiveGrid(times, 2, 210, 18, 8, 2);
-        addRow(card, g, 6, "Ajuste preciso do trecho (opcional)", times);
+        addSettingSection(settings, "TRECHO (HH:MM:SS)", times);
+        addSettingSection(settings, "SALVAR CLIPE COMO", createFileRow(outputField, "Destino...", this::chooseOutput));
 
         JPanel qualityInfo = new JPanel();
         qualityInfo.setLayout(new BoxLayout(qualityInfo, BoxLayout.Y_AXIS));
         qualityInfo.setBackground(new Color(31, 42, 60));
-        qualityInfo.setBorder(new EmptyBorder(14, 16, 14, 16));
-        JLabel qualityTitle = new JLabel("Resolução original · H.264 CRF 18 · áudio AAC 192 kb/s");
-        qualityTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        qualityInfo.setBorder(new EmptyBorder(10, 12, 10, 12));
+        JLabel qualityTitle = new JLabel("QUALIDADE DA EXPORTA\u00c7\u00c3O");
+        qualityTitle.setFont(new Font("Segoe UI", Font.BOLD, 11));
         qualityTitle.setForeground(new Color(195, 215, 242));
-        JTextArea qualityDescription = new JTextArea("Mantém as dimensões do vídeo fonte sem ampliar vídeos pequenos. O arquivo original não é alterado.");
+        JTextArea qualityDescription = new JTextArea("Usa a GPU NVIDIA quando dispon\u00edvel; caso contr\u00e1rio, usa H.264 pela CPU. Mant\u00e9m a resolu\u00e7\u00e3o original e n\u00e3o altera o v\u00eddeo fonte.");
         qualityDescription.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         qualityDescription.setForeground(new Color(165, 180, 202));
         qualityDescription.setOpaque(false);
@@ -145,67 +156,83 @@ public class ClipEditorPanel extends JPanel {
         qualityDescription.setFocusable(false);
         qualityDescription.setLineWrap(true);
         qualityDescription.setWrapStyleWord(true);
-        qualityDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
-        qualityDescription.setMaximumSize(new Dimension(Integer.MAX_VALUE, 54));
         qualityInfo.add(qualityTitle);
         qualityInfo.add(Box.createVerticalStrut(5));
         qualityInfo.add(qualityDescription);
-        g.gridx = 0; g.gridy = 8; g.gridwidth = 2;
-        card.add(qualityInfo, g);
+        qualityInfo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        settings.add(Box.createVerticalStrut(2));
+        settings.add(qualityInfo);
+        settings.add(Box.createVerticalStrut(10));
 
-        JPanel ffmpegRow = new JPanel(new BorderLayout(12, 0));
+        JPanel ffmpegRow = new JPanel(new BorderLayout(8, 0));
         ffmpegRow.setOpaque(false);
-        ffmpegLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        ffmpegLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
         ffmpegLabel.setForeground(new Color(165, 175, 190));
-        JButton locateFfmpeg = new JButton("Localizar FFmpeg…");
+        JButton locateFfmpeg = new JButton("Localizar FFmpeg...");
         locateFfmpeg.addActionListener(e -> chooseFfmpeg());
         ffmpegRow.add(ffmpegLabel, BorderLayout.CENTER);
         ffmpegRow.add(locateFfmpeg, BorderLayout.EAST);
-        g.gridy = 9;
-        card.add(ffmpegRow, g);
+        ffmpegRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        settings.add(ffmpegRow);
+        settings.add(Box.createVerticalStrut(8));
 
         status.setEditable(false);
         status.setLineWrap(true);
         status.setWrapStyleWord(true);
         status.setOpaque(false);
         status.setForeground(new Color(165, 175, 190));
-        status.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        status.setRows(3);
-        g.gridy = 10;
-        card.add(status, g);
+        status.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        status.setRows(2);
+        status.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+        status.setAlignmentX(Component.LEFT_ALIGNMENT);
+        settings.add(status);
 
         progress.setVisible(false);
         progress.setStringPainted(true);
-        progress.setString("Preparando exportação…");
-        g.gridy = 11;
-        card.add(progress, g);
+        progress.setString("Preparando exporta\u00e7\u00e3o...");
+        progress.setAlignmentX(Component.LEFT_ALIGNMENT);
+        settings.add(progress);
+        settings.add(Box.createVerticalStrut(8));
 
-        JPanel actions = new JPanel(new GridLayout(1, 2, 10, 8));
+        JPanel actions = new JPanel(new GridLayout(0, 1, 0, 8));
         actions.setOpaque(false);
         cancelButton.setEnabled(false);
         cancelButton.addActionListener(e -> cancelExport());
         exportButton.setBackground(new Color(66, 133, 244));
         exportButton.setForeground(Color.WHITE);
         exportButton.setFocusPainted(false);
+        exportButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
         exportButton.addActionListener(e -> startExport());
         actions.add(cancelButton);
         actions.add(exportButton);
-        installResponsiveGrid(actions, 2, 230, 10, 8, 2);
-        g.gridy = 12;
-        card.add(actions, g);
+        actions.setAlignmentX(Component.LEFT_ALIGNMENT);
+        settings.add(actions);
 
-        JLabel note = new JLabel("Use o arquivo original salvo no seu computador. A API do YouTube não fornece o arquivo original para edição.");
-        note.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-        note.setForeground(new Color(145, 155, 172));
-        g.gridy = 13;
-        card.add(note, g);
-        return new JScrollPane(card, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER) {{
-            setBorder(null);
-            getViewport().setBackground(new Color(36, 40, 48));
-        }};
+        settings.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(settings);
+
+        JScrollPane editorScroll = new JScrollPane(card,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        editorScroll.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(55, 62, 75), 1, true),
+                BorderFactory.createEmptyBorder(0, 0, 0, 0)));
+        editorScroll.getViewport().setBackground(new Color(44, 49, 60));
+        editorScroll.getVerticalScrollBar().setUnitIncrement(18);
+        return editorScroll;
     }
 
+    private void addSettingSection(JPanel settings, String title, JComponent content) {
+        JLabel label = new JLabel(title);
+        label.setFont(new Font("Segoe UI", Font.BOLD, 10));
+        label.setForeground(new Color(185, 198, 216));
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
+        settings.add(label);
+        settings.add(Box.createVerticalStrut(6));
+        settings.add(content);
+        settings.add(Box.createVerticalStrut(14));
+    }
     private JComponent createPreviewEditor() {
         JPanel editor = new JPanel(new BorderLayout(0, 10));
         editor.setOpaque(false);
@@ -214,8 +241,8 @@ public class ClipEditorPanel extends JPanel {
         preview.setBackground(new Color(13, 16, 21));
         preview.setForeground(new Color(165, 175, 190));
         preview.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        preview.setPreferredSize(new Dimension(800, 450));
-        preview.setMinimumSize(new Dimension(320, 180));
+        preview.setPreferredSize(new Dimension(480, 270));
+        preview.setMinimumSize(new Dimension(220, 124));
         preview.setBorder(BorderFactory.createLineBorder(new Color(60, 68, 82)));
         preview.addComponentListener(new java.awt.event.ComponentAdapter() {
             @Override public void componentResized(java.awt.event.ComponentEvent e) {
@@ -224,15 +251,15 @@ public class ClipEditorPanel extends JPanel {
         });
         editor.addComponentListener(new java.awt.event.ComponentAdapter() {
             @Override public void componentResized(java.awt.event.ComponentEvent e) {
-                int width = Math.max(320, Math.min(900, editor.getWidth()));
-                int height = Math.max(180, Math.min(506, width * 9 / 16));
+                int width = Math.max(220, Math.min(900, editor.getWidth()));
+                int height = Math.max(124, Math.min(280, width * 9 / 16));
                 Dimension target = new Dimension(width, height);
                 boolean changed = false;
                 if (!target.equals(preview.getPreferredSize())) {
                     preview.setPreferredSize(target);
                     changed = true;
                 }
-                Dimension timelineSize = new Dimension(width, 76);
+                Dimension timelineSize = new Dimension(width, 64);
                 if (!timelineSize.equals(timeline.getPreferredSize())) {
                     timeline.setPreferredSize(timelineSize);
                     changed = true;
@@ -244,22 +271,36 @@ public class ClipEditorPanel extends JPanel {
 
         JPanel controls = new JPanel(new GridLayout(0, 4, 8, 6));
         controls.setOpaque(false);
-        JButton back = new JButton("−1s");
-        JButton forward = new JButton("+1s");
+        JButton back = new JButton("⏪ 5 s");
+        JButton forward = new JButton("5 s ⏩");
         JButton stop = new JButton("Parar");
         muteButton.setEnabled(false);
         muteButton.setToolTipText("O vídeo selecionado ainda não foi carregado.");
         for (JButton button : new JButton[]{back, playButton, stop, forward, markStartButton, markEndButton, muteButton}) {
             button.setFocusPainted(false);
+            button.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            button.setForeground(new Color(225, 232, 242));
+            button.setBackground(new Color(55, 62, 75));
+            button.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(75, 84, 101)),
+                    new EmptyBorder(8, 10, 8, 10)));
+            button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             controls.add(button);
         }
+        controls.setBorder(new EmptyBorder(4, 0, 4, 0));
         installResponsiveControls(controls);
         playButton.setBackground(new Color(66, 133, 244));
         playButton.setForeground(Color.WHITE);
+        playButton.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(91, 155, 255)),
+                new EmptyBorder(8, 10, 8, 10)));
+        back.setToolTipText("Voltar 5 segundos");
+        forward.setToolTipText("Avançar 5 segundos");
+        stop.setToolTipText("Parar e voltar ao início do trecho");
         playButton.addActionListener(e -> togglePlayback());
-        stop.addActionListener(e -> stopPlayback());
-        back.addActionListener(e -> seekTo(Math.max(0, playheadSeconds - 1)));
-        forward.addActionListener(e -> seekTo(Math.min(durationSeconds(), playheadSeconds + 1)));
+        stop.addActionListener(e -> stopAndRewind());
+        back.addActionListener(e -> seekTo(Math.max(0, playheadSeconds - 5)));
+        forward.addActionListener(e -> seekTo(Math.min(durationSeconds(), playheadSeconds + 5)));
         markStartButton.addActionListener(e -> setRangeStart((long) playheadSeconds));
         markEndButton.addActionListener(e -> setRangeEnd((long) playheadSeconds));
         muteButton.addActionListener(e -> {
@@ -271,7 +312,9 @@ public class ClipEditorPanel extends JPanel {
 
         JPanel timelineBox = new JPanel(new BorderLayout(0, 6));
         timelineBox.setOpaque(false);
-        timeline.setPreferredSize(new Dimension(640, 76));
+        timeline.setPreferredSize(new Dimension(640, 64));
+        timeline.setMinimumSize(new Dimension(0, 64));
+        timeline.setMaximumSize(new Dimension(Integer.MAX_VALUE, 64));
         timeline.setFocusable(true);
         timeline.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("LEFT"), "seek-back");
         timeline.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("RIGHT"), "seek-forward");
@@ -345,7 +388,7 @@ public class ClipEditorPanel extends JPanel {
             @Override public void componentResized(java.awt.event.ComponentEvent e) {
                 int width = controls.getWidth();
                 if (width <= 0) return;
-                int columns = width >= 760 ? 4 : width >= 520 ? 3 : 2;
+                int columns = width >= 460 ? 4 : width >= 320 ? 3 : 2;
                 if (columns == currentColumns[0]) return;
                 currentColumns[0] = columns;
                 controls.setLayout(new GridLayout(0, columns, 8, 6));
@@ -512,6 +555,13 @@ public class ClipEditorPanel extends JPanel {
         requestPreviewFrame();
     }
 
+    private void stopAndRewind() {
+        stopPlayback();
+        playheadSeconds = loadedMedia == null ? 0 : safeParse(startField.getText(), 0);
+        updateTimeDisplay();
+        requestPreviewFrame();
+    }
+
     private void updateTimeDisplay() {
         playheadLabel.setText(formatTime((long) playheadSeconds) + " / " +
                 (loadedMedia == null ? "00:00:00" : formatDuration(loadedMedia.durationSeconds)));
@@ -609,7 +659,8 @@ public class ClipEditorPanel extends JPanel {
     }
 
     private void togglePlayback() {
-        if (previewProcess != null && previewProcess.isAlive()) { stopPlayback(); return; }
+        if (previewProcess != null && previewProcess.isAlive()) { pausePlayback(); return; }
+        if (playbackStarting) return;
         if (sourceFile == null || loadedMedia == null) { showError("Selecione um vídeo para reproduzir a prévia."); return; }
         seekDebounce.stop();
         if (thumbnailWorker != null) thumbnailWorker.cancel(true);
@@ -619,27 +670,41 @@ public class ClipEditorPanel extends JPanel {
         Process pendingFrame = frameProcess;
         if (pendingFrame != null) pendingFrame.destroyForcibly();
         if (seekWorker != null) seekWorker.cancel(true);
-        long start = safeParse(startField.getText(), 0);
-        long end = safeParse(endField.getText(), (long) loadedMedia.durationSeconds);
+        long start;
+        long end;
+        try {
+            start = parseTime(startField.getText());
+            end = parseTime(endField.getText());
+        } catch (IllegalArgumentException error) {
+            showError(error.getMessage());
+            return;
+        }
+        if (end <= start || start >= loadedMedia.durationSeconds || end > Math.ceil(loadedMedia.durationSeconds)) {
+            showError("Confira o início e o fim do trecho selecionado.");
+            return;
+        }
         if (playheadSeconds < start || playheadSeconds >= end) playheadSeconds = start;
-        playbackStart = (long) playheadSeconds;
+        playbackStart = playheadSeconds;
         playbackFrame = 0;
-        playButton.setText("❚❚ Pausar");
+        playbackPaused = false;
+        playbackStarting = true;
+        playButton.setText("⏸ Pausar");
         timeline.setPlaying(true);
         final File playingFile = sourceFile;
-        final long selectionEnd = end;
+        final double selectionEnd = end;
         final long generation = ++playbackGeneration;
         new Thread(() -> {
             Process process = null;
             try {
                 if (generation != playbackGeneration) return;
-                long remaining = Math.max(1, selectionEnd - playbackStart);
+                double remaining = Math.max(0.05, selectionEnd - playbackStart);
                 java.util.List<String> command = java.util.Arrays.asList(ffmpegExecutable(), "-hide_banner", "-loglevel", "error",
-                        "-ss", Long.toString(playbackStart), "-re", "-i", playingFile.getAbsolutePath(), "-t", Long.toString(remaining),
+                        "-ss", formatSeconds(playbackStart), "-re", "-i", playingFile.getAbsolutePath(), "-t", formatSeconds(remaining),
                         "-vf", "fps=15,scale=960:540:force_original_aspect_ratio=decrease", "-an", "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "6", "pipe:1");
                 process = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD).start();
                 if (generation != playbackGeneration) { process.destroyForcibly(); return; }
                 previewProcess = process;
+                playbackStarting = false;
                 final Process activeProcess = process;
                 if (loadedMedia != null && loadedMedia.hasAudio) {
                     startAudioPreview(playingFile, playbackStart, remaining, generation);
@@ -660,7 +725,7 @@ public class ClipEditorPanel extends JPanel {
                                 frame = null;
                                 if (image != null) {
                                     final BufferedImage next = image;
-                                    final double position = playbackStart + playbackFrame++ / 15.0;
+                                    final double position = Math.min(selectionEnd, playbackStart + playbackFrame++ / 15.0);
                                     SwingUtilities.invokeLater(() -> {
                                         if (previewProcess == activeProcess) {
                                             currentPreviewFrame = next;
@@ -675,18 +740,26 @@ public class ClipEditorPanel extends JPanel {
                         previous = current;
                     }
                 }
-                process.waitFor();
-            } catch (Exception ignored) {
+                int exitCode = process.waitFor();
+                if (exitCode != 0 && generation == playbackGeneration) {
+                    SwingUtilities.invokeLater(() -> setStatus("A prévia parou com erro do FFmpeg (código " + exitCode + ").", true));
+                }
+            } catch (Exception error) {
+                if (generation == playbackGeneration) {
+                    SwingUtilities.invokeLater(() -> setStatus("Não foi possível reproduzir a prévia: " + error.getMessage(), true));
+                }
                 if (process != null) process.destroyForcibly();
             } finally {
                 if (generation == playbackGeneration) stopAudioStream();
                 Process finishedProcess = process;
                 SwingUtilities.invokeLater(() -> {
-                    if (generation == playbackGeneration && finishedProcess != null && previewProcess == finishedProcess) {
+                    if (generation == playbackGeneration && (finishedProcess == null || previewProcess == finishedProcess)) {
                         previewProcess = null;
+                        playbackStarting = false;
+                        playbackPaused = false;
                         playButton.setText("▶ Reproduzir seleção");
                         timeline.setPlaying(false);
-                        if (loadedMedia != null) {
+                        if (finishedProcess != null && loadedMedia != null) {
                             playheadSeconds = Math.min(selectionEnd, loadedMedia.durationSeconds);
                             timeline.setPlayhead(playheadSeconds);
                             updateTimeDisplay();
@@ -699,6 +772,8 @@ public class ClipEditorPanel extends JPanel {
 
     private void stopPlayback() {
         playbackGeneration++;
+        playbackStarting = false;
+        playbackPaused = false;
         Process process = previewProcess;
         previewProcess = null;
         if (process != null) process.destroyForcibly();
@@ -707,7 +782,23 @@ public class ClipEditorPanel extends JPanel {
         timeline.setPlaying(false);
     }
 
-    private void startAudioPreview(File file, long start, long duration, long generation) {
+    private void pausePlayback() {
+        playbackGeneration++;
+        playbackPaused = true;
+        playbackStarting = false;
+        Process process = previewProcess;
+        previewProcess = null;
+        if (process != null) process.destroyForcibly();
+        stopAudioStream();
+        playButton.setText("▶ Continuar");
+        timeline.setPlaying(false);
+    }
+
+    private String formatSeconds(double seconds) {
+        return String.format(java.util.Locale.ROOT, "%.3f", Math.max(0, seconds));
+    }
+
+    private void startAudioPreview(File file, double start, double duration, long generation) {
         Thread audioThread = new Thread(() -> {
             Process process = null;
             SourceDataLine line = null;
@@ -719,7 +810,7 @@ public class ClipEditorPanel extends JPanel {
                 line.start();
                 audioLine = line;
                 java.util.List<String> command = java.util.Arrays.asList(ffmpegExecutable(), "-hide_banner", "-loglevel", "error",
-                        "-ss", Long.toString(start), "-re", "-i", file.getAbsolutePath(), "-t", Long.toString(duration),
+                        "-ss", formatSeconds(start), "-re", "-i", file.getAbsolutePath(), "-t", formatSeconds(duration),
                         "-map", "0:a:0?", "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", "-f", "s16le", "pipe:1");
                 process = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD).start();
                 audioProcess = process;
@@ -827,12 +918,18 @@ public class ClipEditorPanel extends JPanel {
     }
 
     private void updateFfmpegLabel() {
-        String configured = Preferences.userNodeForPackage(ClipEditorPanel.class).get(PREF_FFMPEG, "").trim();
         String ffmpeg = ffmpegExecutable();
         if (isExecutableFile(ffmpeg)) {
-            ffmpegLabel.setText("FFmpeg: " + ffmpeg + " · FFprobe " + (isExecutableFile(ffprobeExecutable()) ? "disponível" : "não encontrado"));
+            String ffprobe = ffprobeExecutable();
+            boolean probeAvailable = isExecutableFile(ffprobe);
+            ffmpegLabel.setText(probeAvailable ? "FFmpeg e FFprobe prontos" : "FFprobe não encontrado");
+            ffmpegLabel.setToolTipText("FFmpeg: " + ffmpeg + " | FFprobe: " + ffprobe);
         } else {
-            ffmpegLabel.setText("FFmpeg/FFprobe: " + (isOnPath() ? "disponíveis no PATH" : "não encontrados; instale e localize ffmpeg.exe"));
+            boolean toolsAvailable = isOnPath();
+            ffmpegLabel.setText(toolsAvailable ? "FFmpeg e FFprobe prontos no PATH" : "FFmpeg/FFprobe não encontrados");
+            ffmpegLabel.setToolTipText(toolsAvailable
+                    ? "Os executáveis FFmpeg e FFprobe foram encontrados no PATH."
+                    : "Instale o FFmpeg ou localize o executável ffmpeg.exe.");
         }
     }
 
@@ -910,6 +1007,7 @@ public class ClipEditorPanel extends JPanel {
 
     private void startExport() {
         if (sourceFile == null || !sourceFile.isFile()) { showError("Selecione um arquivo de vídeo local válido."); return; }
+        if (worker != null && !worker.isDone()) return;
         if (outputFile == null) { chooseOutput(); if (outputFile == null) return; }
         long start, end;
         try {
@@ -921,10 +1019,18 @@ public class ClipEditorPanel extends JPanel {
         if (outputFile.toPath().toAbsolutePath().normalize().equals(sourceFile.toPath().toAbsolutePath().normalize())) {
             showError("Escolha um arquivo de destino diferente do original."); return;
         }
+        File outputParent = outputFile.getAbsoluteFile().getParentFile();
+        if (outputParent == null || !outputParent.isDirectory()) {
+            showError("A pasta escolhida para salvar o clipe não existe."); return;
+        }
         if (outputFile.exists() && JOptionPane.showConfirmDialog(owner, "O arquivo já existe. Deseja substituí-lo?", "Confirmar substituição", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
 
         long duration = end - start;
+        File exportSource = sourceFile;
+        File exportTarget = outputFile;
         cancellationRequested = false;
+        exportOutputMayBePartial = false;
+        exportCompletedSuccessfully = false;
         exportButton.setEnabled(false);
         cancelButton.setEnabled(true);
         progress.setValue(0);
@@ -933,35 +1039,59 @@ public class ClipEditorPanel extends JPanel {
         String executable = ffmpegExecutable();
         worker = new SwingWorker<>() {
             @Override protected MediaInfo doInBackground() throws Exception {
-                MediaInfo media = probeMedia(sourceFile);
+                MediaInfo media = probeMedia(exportSource);
                 if (media.durationSeconds > MAX_VIDEO_SECONDS)
                     throw new java.io.IOException("Este vídeo tem " + formatDuration(media.durationSeconds) + ". O editor aceita arquivos de até 10 minutos.");
-                if (end > media.durationSeconds)
+                if (start >= media.durationSeconds)
+                    throw new java.io.IOException("O início selecionado está além do fim do vídeo (" + formatDuration(media.durationSeconds) + ").");
+                if (end > Math.ceil(media.durationSeconds))
                     throw new java.io.IOException("O tempo final informado ultrapassa a duração do vídeo (" + formatDuration(media.durationSeconds) + ").");
-                java.util.List<String> command = java.util.Arrays.asList(executable, "-hide_banner", "-loglevel", "error",
-                        "-y", "-i", sourceFile.getAbsolutePath(), "-ss", Long.toString(start), "-t", Long.toString(duration),
-                        "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
-                        "-progress", "pipe:1", outputFile.getAbsolutePath());
-                Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-                currentProcess = process;
-                if (cancellationRequested) process.destroyForcibly();
-                StringBuilder errors = new StringBuilder();
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        if (line.startsWith("out_time_us=")) {
-                            try { publish((int) Math.min(99, Long.parseLong(line.substring(12)) * 100 / (duration * 1_000_000L))); }
-                            catch (NumberFormatException ignored) { }
-                        } else if (!line.contains("=") && errors.length() < 2500) {
-                            errors.append(line).append('\n');
+                if (cancellationRequested) throw new InterruptedException("Exportação cancelada.");
+                boolean useNvenc = supportsNvenc(executable);
+                boolean hardwareEncoderSelected = useNvenc;
+                SwingUtilities.invokeLater(() -> setStatus(hardwareEncoderSelected
+                        ? "Exportando com a GPU NVIDIA (NVENC)..."
+                        : "Exportando pelo processador (H.264 rápido)...", false));
+                while (true) {
+                    if (cancellationRequested) throw new InterruptedException("Exportação cancelada.");
+                    java.util.List<String> command = createExportCommand(executable, exportSource, exportTarget, start, duration, useNvenc);
+                    Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+                    currentProcess = process;
+                    exportOutputMayBePartial = true;
+                    if (cancellationRequested) process.destroyForcibly();
+                    StringBuilder errors = new StringBuilder();
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            if (line.startsWith("out_time_us=")) {
+                                try { publish((int) Math.max(0, Math.min(99, Long.parseLong(line.substring(12)) * 100 / (duration * 1_000_000L)))); }
+                                catch (NumberFormatException ignored) { }
+                            } else if (!line.contains("=") && errors.length() < 2500) {
+                                errors.append(line).append('\n');
+                            }
                         }
                     }
+                    int exitCode = process.waitFor();
+                    currentProcess = null;
+                    if (exitCode == 0) break;
+                    if (cancellationRequested) throw new InterruptedException("Exportação cancelada.");
+                    if (useNvenc && isNvencFailure(errors.toString())) {
+                        Files.deleteIfExists(exportTarget.toPath());
+                        exportOutputMayBePartial = false;
+                        useNvenc = false;
+                        SwingUtilities.invokeLater(() -> setStatus("A GPU não pôde codificar este vídeo; continuando pelo processador...", false));
+                        continue;
+                    }
+                    throw new java.io.IOException(errors.length() == 0 ? "FFmpeg encerrou com código " + exitCode : errors.toString().trim());
                 }
-                int exitCode = process.waitFor();
-                currentProcess = null;
-                if (exitCode != 0) throw new java.io.IOException(errors.length() == 0 ? "FFmpeg encerrou com código " + exitCode : errors.toString().trim());
-                return media;
+                if (cancellationRequested) throw new InterruptedException("Exportação cancelada.");
+                if (!exportTarget.isFile() || Files.size(exportTarget.toPath()) == 0)
+                    throw new java.io.IOException("O FFmpeg terminou sem gerar um arquivo de vídeo válido.");
+                MediaInfo exported = probeMedia(exportTarget);
+                if (cancellationRequested) throw new InterruptedException("Exportação cancelada.");
+                exportOutputMayBePartial = false;
+                exportCompletedSuccessfully = true;
+                return exported;
             }
 
             @Override protected void process(java.util.List<Integer> chunks) {
@@ -973,22 +1103,72 @@ public class ClipEditorPanel extends JPanel {
                 exportButton.setEnabled(true);
                 cancelButton.setEnabled(false);
                 progress.setVisible(false);
-                if (cancellationRequested) {
-                    try { Files.deleteIfExists(outputFile.toPath()); } catch (Exception ignored) { }
+                if (cancellationRequested && !exportCompletedSuccessfully) {
+                    cleanupPartialExport(exportTarget);
                     setStatus("Exportação cancelada.", true);
                     return;
                 }
                 try {
                     MediaInfo media = get();
-                    setStatus("Clipe salvo com sucesso (" + media.width + " × " + media.height + ", resolução original): " + outputFile.getAbsolutePath(), false);
+                    progress.setValue(100);
+                    setStatus("Clipe salvo com sucesso (" + media.width + " × " + media.height + ", resolução original): " + exportTarget.getAbsolutePath(), false);
                     JOptionPane.showMessageDialog(owner, "Clipe exportado mantendo a resolução original (" + media.width + " × " + media.height + ").", "Exportação concluída", JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception e) {
+                    cleanupPartialExport(exportTarget);
                     Throwable cause = e.getCause() == null ? e : e.getCause();
                     setStatus("Não foi possível exportar: " + cause.getMessage(), true);
                 }
             }
         };
         worker.execute();
+    }
+
+    private void cleanupPartialExport(File target) {
+        if (!exportOutputMayBePartial) return;
+        try { Files.deleteIfExists(target.toPath()); }
+        catch (Exception ignored) { }
+        exportOutputMayBePartial = false;
+    }
+
+    private java.util.List<String> createExportCommand(String executable, File source, File target,
+                                                       long start, long duration, boolean useNvenc) {
+        java.util.List<String> command = new java.util.ArrayList<>(java.util.Arrays.asList(
+                executable, "-hide_banner", "-loglevel", "error", "-y", "-i", source.getAbsolutePath(),
+                "-ss", Long.toString(start), "-t", Long.toString(duration),
+                "-map", "0:v:0", "-map", "0:a?"));
+        if (useNvenc) {
+            java.util.Collections.addAll(command, "-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "18", "-b:v", "0");
+        } else {
+            java.util.Collections.addAll(command, "-c:v", "libx264", "-preset", "veryfast", "-crf", "18");
+        }
+        java.util.Collections.addAll(command, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+                "-movflags", "+faststart", "-progress", "pipe:1", target.getAbsolutePath());
+        return command;
+    }
+
+    private boolean supportsNvenc(String executable) {
+        Process probe = null;
+        try {
+            java.util.List<String> command = java.util.Arrays.asList(executable, "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "color=c=black:s=640x360:d=0.1", "-frames:v", "1", "-an",
+                    "-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "18", "-b:v", "0",
+                    "-pix_fmt", "yuv420p", "-f", "null", "-");
+            probe = new ProcessBuilder(command).redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
+            if (!probe.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
+                probe.destroyForcibly();
+                return false;
+            }
+            return probe.exitValue() == 0;
+        } catch (Exception ignored) {
+            if (probe != null) probe.destroyForcibly();
+            return false;
+        }
+    }
+
+    private boolean isNvencFailure(String message) {
+        String lower = message.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("nvenc") || lower.contains("nvidia") || lower.contains("unknown encoder");
     }
 
     private MediaInfo probeMedia(File file) throws Exception {
@@ -1109,8 +1289,11 @@ public class ClipEditorPanel extends JPanel {
         @Override protected void paintComponent(Graphics graphics) {
             super.paintComponent(graphics);
             Graphics2D g = (Graphics2D) graphics.create();
+            g.setColor(getBackground());
+            g.fillRect(0, 0, getWidth(), getHeight());
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int left = 10, right = Math.max(left + 1, getWidth() - 10), top = 5, imageHeight = Math.min(48, getHeight() - 22);
+            int left = 10, right = Math.max(left + 1, getWidth() - 10), top = 4;
+            int imageHeight = Math.max(1, Math.min(42, getHeight() - 20));
             g.setColor(new Color(17, 20, 25));
             g.fillRoundRect(left, top, right - left, imageHeight, 8, 8);
             if (!frames.isEmpty()) {
@@ -1146,6 +1329,18 @@ public class ClipEditorPanel extends JPanel {
         }
     }
 
+    private static final class VerticalScrollablePanel extends JPanel implements Scrollable {
+        private static final long serialVersionUID = 1L;
+
+        @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+        @Override public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) { return 18; }
+        @Override public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(18, visibleRect.height - 18);
+        }
+        @Override public boolean getScrollableTracksViewportWidth() { return true; }
+        @Override public boolean getScrollableTracksViewportHeight() { return false; }
+    }
+
     private static final class MediaInfo {
         final int width;
         final int height;
@@ -1161,6 +1356,7 @@ public class ClipEditorPanel extends JPanel {
     }
 
     private void cancelExport() {
+        if (exportCompletedSuccessfully) return;
         Process process = currentProcess;
         cancellationRequested = true;
         if (process != null) process.destroyForcibly();

@@ -48,6 +48,7 @@ public class DashboardFrame extends JFrame {
     private JTextField txtPesquisa;
     private JComboBox<String> cbFiltroStatus;
     private JComboBox<String> cbFiltroCategoria;
+    private JLabel lblVideoCount;
 
     // Botões de Menu da Sidebar para controle de estado visual
     private JButton btnNavVideos;
@@ -386,12 +387,31 @@ public class DashboardFrame extends JFrame {
     // 3. PAINEL: GERENCIAR VÍDEOS
     // ==========================================
     private JPanel criarPainelGerenciarVideos() {
-        JPanel panel = new JPanel(new BorderLayout(0, 18));
+        JPanel panel = new JPanel(new BorderLayout(0, 16));
         panel.setBackground(new Color(36, 40, 48));
-        panel.setBorder(new EmptyBorder(24, 28, 24, 28));
+        panel.setBorder(new EmptyBorder(20, 24, 20, 24));
 
-        // 1. CARDS DE MÉTRICAS COM GAPS PROPORCIONAIS (18px)
-        JPanel cardsRow = new JPanel(new GridLayout(0, 4, 18, 12));
+        JPanel overview = new JPanel();
+        overview.setOpaque(false);
+        overview.setLayout(new BoxLayout(overview, BoxLayout.Y_AXIS));
+        JPanel pageIntro = new JPanel(new BorderLayout());
+        pageIntro.setOpaque(false);
+        JPanel pageTitles = new JPanel();
+        pageTitles.setOpaque(false);
+        pageTitles.setLayout(new BoxLayout(pageTitles, BoxLayout.Y_AXIS));
+        JLabel pageTitle = new JLabel("Visão geral");
+        pageTitle.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        pageTitle.setForeground(Color.WHITE);
+        JLabel pageSubtitle = new JLabel("Acompanhe seus vídeos e o desempenho do canal.");
+        pageSubtitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        pageSubtitle.setForeground(new Color(155, 165, 180));
+        pageTitles.add(pageTitle);
+        pageTitles.add(Box.createVerticalStrut(4));
+        pageTitles.add(pageSubtitle);
+        pageIntro.add(pageTitles, BorderLayout.WEST);
+
+        // Métricas principais
+        JPanel cardsRow = new JPanel(new GridLayout(1, 4, 14, 12));
         cardsRow.setOpaque(false);
 
         lblTotalVideosValor = new JLabel("0");
@@ -400,15 +420,18 @@ public class DashboardFrame extends JFrame {
         lblVideosPublicadosValor = new JLabel("0");
 
         cardsRow.add(criarCardMetrica("Total de Vídeos", lblTotalVideosValor, "Acervo cadastrado", new Color(74, 144, 226)));
-        cardsRow.add(criarCardMetrica("Visualizações Totais", lblTotalViewsValor, "+14.2% este mês", new Color(46, 204, 113)));
+        cardsRow.add(criarCardMetrica("Visualizações Totais", lblTotalViewsValor, "", new Color(46, 204, 113)));
         cardsRow.add(criarCardMetrica("Total de Curtidas", lblTotalLikesValor, "Engajamento ativo", new Color(155, 89, 182)));
         cardsRow.add(criarCardMetrica("Vídeos no Ar", lblVideosPublicadosValor, "Públicos no YouTube", new Color(243, 156, 18)));
-        installResponsiveGrid(cardsRow, 4, 190, 18, 12, 4);
+        installResponsiveGrid(cardsRow, 4, 180, 14, 12, 4);
 
-        panel.add(cardsRow, BorderLayout.NORTH);
+        overview.add(pageIntro);
+        overview.add(Box.createRigidArea(new Dimension(0, 16)));
+        overview.add(cardsRow);
+        panel.add(overview, BorderLayout.NORTH);
 
         // 2. CONTEÚDO CENTRAL: TOOLBAR E TABELA
-        JPanel centerPanel = new JPanel(new BorderLayout(0, 16));
+        JPanel centerPanel = new JPanel(new BorderLayout(0, 12));
         centerPanel.setOpaque(false);
 
         // Barra de Ações com altura padronizada de 36px para todos os elementos
@@ -445,38 +468,42 @@ public class DashboardFrame extends JFrame {
         installResponsiveGrid(filtersBox, 3, 170, 8, 8, 3);
 
         // Botões CRUD (Direita) com gap de 10px entre si
-        JPanel actionsBox = new JPanel(new GridLayout(0, 4, 8, 8));
+        JPanel actionsBox = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         actionsBox.setOpaque(false);
 
-        JButton btnAdd = new JButton("➕ Novo Vídeo");
-        btnAdd.setPreferredSize(new Dimension(125, 36));
-        btnAdd.setBackground(new Color(66, 133, 244));
-        btnAdd.setForeground(Color.WHITE);
-        btnAdd.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        JButton btnAdd = new JButton("Novo vídeo");
+        btnAdd.setPreferredSize(new Dimension(130, 38));
         btnAdd.addActionListener(e -> abrirModalNovoVideo());
 
-        JButton btnEdit = new JButton("✏️ Editar");
-        btnEdit.setPreferredSize(new Dimension(95, 36));
+        JButton btnEdit = new JButton("Editar");
+        btnEdit.setPreferredSize(new Dimension(96, 38));
         btnEdit.addActionListener(e -> editarVideoSelecionado());
 
-        JButton btnDelete = new JButton("🗑️ Excluir");
-        btnDelete.setPreferredSize(new Dimension(95, 36));
+        JButton btnDelete = new JButton("Excluir");
+        btnDelete.setPreferredSize(new Dimension(100, 38));
         btnDelete.addActionListener(e -> excluirVideoSelecionado());
 
-        JButton btnView = new JButton("▶️ Detalhes");
-        btnView.setPreferredSize(new Dimension(110, 36));
+        JButton btnView = new JButton("Detalhes");
+        btnView.setPreferredSize(new Dimension(110, 38));
         btnView.addActionListener(e -> visualizarDetalhesVideo());
+
+        styleDashboardActionButton(btnAdd, new Color(66, 133, 244), Color.WHITE);
+        styleDashboardActionButton(btnEdit, new Color(48, 54, 65), new Color(220, 226, 236));
+        styleDashboardActionButton(btnDelete, new Color(56, 42, 45), new Color(239, 133, 133));
+        styleDashboardActionButton(btnView, new Color(48, 54, 65), new Color(220, 226, 236));
+        btnEdit.setEnabled(false);
+        btnDelete.setEnabled(false);
+        btnView.setEnabled(false);
 
         actionsBox.add(btnAdd);
         actionsBox.add(btnEdit);
         actionsBox.add(btnDelete);
         actionsBox.add(btnView);
-        installResponsiveGrid(actionsBox, 4, 125, 8, 8, 4);
 
         filtersBox.setAlignmentX(Component.LEFT_ALIGNMENT);
         actionsBox.setAlignmentX(Component.LEFT_ALIGNMENT);
         toolbar.add(filtersBox);
-        toolbar.add(Box.createRigidArea(new Dimension(0, 8)));
+        toolbar.add(Box.createRigidArea(new Dimension(0, 10)));
         toolbar.add(actionsBox);
         centerPanel.add(toolbar, BorderLayout.NORTH);
 
@@ -493,46 +520,48 @@ public class DashboardFrame extends JFrame {
         videoTable = new JTable(tableModel);
         rowSorter = new TableRowSorter<>(tableModel);
         videoTable.setRowSorter(rowSorter);
-        videoTable.setRowHeight(40);
-        videoTable.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        videoTable.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+        videoTable.setRowHeight(42);
+        videoTable.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        videoTable.setForeground(new Color(220, 226, 236));
+        videoTable.setBackground(new Color(39, 44, 53));
+        videoTable.setSelectionBackground(new Color(52, 88, 139));
+        videoTable.setSelectionForeground(Color.WHITE);
+        videoTable.setGridColor(new Color(50, 56, 67));
+        videoTable.setShowHorizontalLines(true);
+        videoTable.setShowVerticalLines(false);
+        videoTable.setIntercellSpacing(new Dimension(0, 1));
+        videoTable.setFillsViewportHeight(true);
+        videoTable.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 11));
+        videoTable.getTableHeader().setBackground(new Color(35, 40, 49));
+        videoTable.getTableHeader().setForeground(new Color(175, 187, 204));
+        videoTable.getTableHeader().setPreferredSize(new Dimension(0, 40));
+        videoTable.getTableHeader().setReorderingAllowed(false);
         videoTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        videoTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        videoTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        videoTable.getSelectionModel().addListSelectionListener(event -> {
+            if (event.getValueIsAdjusting()) return;
+            boolean hasSelection = videoTable.getSelectedRow() >= 0;
+            btnEdit.setEnabled(hasSelection);
+            btnDelete.setEnabled(hasSelection);
+            btnView.setEnabled(hasSelection);
+        });
 
-        // Larguras ajustadas
-        videoTable.getColumnModel().getColumn(0).setPreferredWidth(75);   // ID
-        videoTable.getColumnModel().getColumn(1).setPreferredWidth(340);  // Título
-        videoTable.getColumnModel().getColumn(2).setPreferredWidth(130);  // Categoria
-        videoTable.getColumnModel().getColumn(3).setPreferredWidth(85);   // Duração
-        videoTable.getColumnModel().getColumn(4).setPreferredWidth(115);  // Views
-        videoTable.getColumnModel().getColumn(5).setPreferredWidth(95);   // Likes
-        videoTable.getColumnModel().getColumn(6).setPreferredWidth(115);  // Status
-        videoTable.getColumnModel().getColumn(7).setPreferredWidth(100);  // Data
-        int[] minimumWidths = {70, 170, 100, 65, 85, 65, 90, 90};
+        int[] preferredWidths = {72, 300, 115, 82, 105, 80, 105, 90};
+        int[] minimumWidths = {64, 160, 90, 65, 80, 60, 85, 80};
         for (int column = 0; column < minimumWidths.length; column++) {
+            videoTable.getColumnModel().getColumn(column).setPreferredWidth(preferredWidths[column]);
             videoTable.getColumnModel().getColumn(column).setMinWidth(minimumWidths[column]);
         }
 
         // Renderizadores de Alinhamento com padding interno
-        DefaultTableCellRenderer centerRender = new DefaultTableCellRenderer();
-        centerRender.setHorizontalAlignment(SwingConstants.CENTER);
-
-        DefaultTableCellRenderer rightRender = new DefaultTableCellRenderer();
-        rightRender.setHorizontalAlignment(SwingConstants.RIGHT);
-        rightRender.setBorder(new EmptyBorder(0, 0, 0, 16));
-
-        DefaultTableCellRenderer leftPaddedRender = new DefaultTableCellRenderer();
-        leftPaddedRender.setHorizontalAlignment(SwingConstants.LEFT);
-        leftPaddedRender.setBorder(new EmptyBorder(0, 14, 0, 0));
-
-        videoTable.getColumnModel().getColumn(0).setCellRenderer(centerRender);
-        videoTable.getColumnModel().getColumn(1).setCellRenderer(leftPaddedRender);
-        videoTable.getColumnModel().getColumn(2).setCellRenderer(leftPaddedRender);
-        videoTable.getColumnModel().getColumn(3).setCellRenderer(centerRender);
-        videoTable.getColumnModel().getColumn(4).setCellRenderer(rightRender);
-        videoTable.getColumnModel().getColumn(5).setCellRenderer(rightRender);
+        videoTable.getColumnModel().getColumn(0).setCellRenderer(new DashboardTableCellRenderer(SwingConstants.CENTER));
+        videoTable.getColumnModel().getColumn(1).setCellRenderer(new DashboardTableCellRenderer(SwingConstants.LEFT));
+        videoTable.getColumnModel().getColumn(2).setCellRenderer(new DashboardTableCellRenderer(SwingConstants.LEFT));
+        videoTable.getColumnModel().getColumn(3).setCellRenderer(new DashboardTableCellRenderer(SwingConstants.CENTER));
+        videoTable.getColumnModel().getColumn(4).setCellRenderer(new DashboardTableCellRenderer(SwingConstants.RIGHT));
+        videoTable.getColumnModel().getColumn(5).setCellRenderer(new DashboardTableCellRenderer(SwingConstants.RIGHT));
         videoTable.getColumnModel().getColumn(6).setCellRenderer(new StatusBadgeRenderer());
-        videoTable.getColumnModel().getColumn(7).setCellRenderer(centerRender);
+        videoTable.getColumnModel().getColumn(7).setCellRenderer(new DashboardTableCellRenderer(SwingConstants.CENTER));
 
         // Atalhos de Duplo Clique e Teclado
         videoTable.addMouseListener(new MouseAdapter() {
@@ -558,12 +587,47 @@ public class DashboardFrame extends JFrame {
 
         atualizarTabela();
 
-        JScrollPane scrollPane = new JScrollPane(videoTable);
-        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(48, 54, 66)));
-        centerPanel.add(scrollPane, BorderLayout.CENTER);
+        JScrollPane scrollPane = new JScrollPane(videoTable,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.setBorder(null);
+        scrollPane.getViewport().setBackground(new Color(39, 44, 53));
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+
+        JPanel tableCard = new JPanel(new BorderLayout(0, 10));
+        tableCard.setBackground(new Color(31, 35, 43));
+        tableCard.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(48, 54, 66), 1, true),
+                new EmptyBorder(12, 12, 12, 12)));
+        JPanel tableTitleRow = new JPanel(new BorderLayout());
+        tableTitleRow.setOpaque(false);
+        JLabel tableTitle = new JLabel("Biblioteca de vídeos");
+        tableTitle.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        tableTitle.setForeground(Color.WHITE);
+        lblVideoCount = new JLabel();
+        lblVideoCount.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        lblVideoCount.setForeground(new Color(155, 165, 180));
+        lblVideoCount.setText(videoList.size() + " vídeos");
+        tableTitleRow.add(tableTitle, BorderLayout.WEST);
+        tableTitleRow.add(lblVideoCount, BorderLayout.EAST);
+        tableCard.add(tableTitleRow, BorderLayout.NORTH);
+        tableCard.add(scrollPane, BorderLayout.CENTER);
+        centerPanel.add(tableCard, BorderLayout.CENTER);
 
         panel.add(centerPanel, BorderLayout.CENTER);
         return panel;
+    }
+
+    private void styleDashboardActionButton(JButton button, Color background, Color foreground) {
+        button.setBackground(background);
+        button.setForeground(foreground);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(67, 74, 87), 1, true),
+                new EmptyBorder(7, 10, 7, 10)));
+        button.setOpaque(true);
     }
 
     private void installResponsiveGrid(JPanel grid, int itemCount, int minimumCellWidth,
@@ -603,16 +667,17 @@ public class DashboardFrame extends JFrame {
         lblValor.setForeground(Color.WHITE);
         lblValor.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblSub = new JLabel(subtitulo);
-        lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 10));
-        lblSub.setForeground(corDestaque);
-        lblSub.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         card.add(lblTit);
         card.add(Box.createRigidArea(new Dimension(0, 8))); // Gap generoso de 8px
         card.add(lblValor);
-        card.add(Box.createRigidArea(new Dimension(0, 6))); // Gap generoso de 6px
-        card.add(lblSub);
+        if (subtitulo != null && !subtitulo.isBlank()) {
+            JLabel lblSub = new JLabel(subtitulo);
+            lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+            lblSub.setForeground(corDestaque);
+            lblSub.setAlignmentX(Component.LEFT_ALIGNMENT);
+            card.add(Box.createRigidArea(new Dimension(0, 6))); // Gap generoso de 6px
+            card.add(lblSub);
+        }
 
         return card;
     }
@@ -630,6 +695,9 @@ public class DashboardFrame extends JFrame {
                     v.getStatus(),
                     v.getUploadDate()
             });
+        }
+        if (lblVideoCount != null) {
+            lblVideoCount.setText(videoList.size() + (videoList.size() == 1 ? " vídeo" : " vídeos"));
         }
     }
 
@@ -681,7 +749,7 @@ public class DashboardFrame extends JFrame {
      */
     private void abrirModalNovoVideo() {
         JDialog dialog = new JDialog(this, "Cadastrar Novo Vídeo", true);
-        sizeDialogWithinScreen(dialog, new Dimension(580, 650), new Dimension(460, 480));
+        sizeDialogWithinScreen(dialog, new Dimension(620, 700), new Dimension(500, 560));
         dialog.setResizable(true); // Redimensionável com o mouse!
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new BorderLayout());
@@ -689,9 +757,23 @@ public class DashboardFrame extends JFrame {
         JPanel form = new JPanel();
         form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
         form.setBackground(new Color(36, 40, 48));
-        form.setBorder(new EmptyBorder(26, 30, 26, 30));
+        form.setBorder(new EmptyBorder(22, 30, 20, 30));
+
+        JLabel formTitle = new JLabel("Informações do vídeo");
+        formTitle.setFont(new Font("Segoe UI", Font.BOLD, 19));
+        formTitle.setForeground(Color.WHITE);
+        formTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel formHint = new JLabel("Preencha os dados para adicionar o vídeo ao seu acervo. * Campo obrigatório.");
+        formHint.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        formHint.setForeground(new Color(155, 165, 180));
+        formHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        form.add(formTitle);
+        form.add(Box.createRigidArea(new Dimension(0, 5)));
+        form.add(formHint);
+        form.add(Box.createRigidArea(new Dimension(0, 22)));
 
         JTextField txtTitulo = new JTextField();
+        txtTitulo.putClientProperty("JTextField.placeholderText", "Ex.: Como editar um vídeo");
         txtTitulo.setMaximumSize(new Dimension(1000, 36));
         txtTitulo.setAlignmentX(Component.LEFT_ALIGNMENT);
 
@@ -699,11 +781,8 @@ public class DashboardFrame extends JFrame {
         cbCategoria.setMaximumSize(new Dimension(1000, 36));
         cbCategoria.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JTextField txtDuracao = new JTextField("12:00");
-        txtDuracao.setMaximumSize(new Dimension(1000, 36));
-        txtDuracao.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         JComboBox<String> cbStatus = new JComboBox<>(new String[]{"Publicado", "Rascunho", "Privado", "Não Listado"});
+        cbStatus.setSelectedItem("Rascunho");
         cbStatus.setMaximumSize(new Dimension(1000, 36));
         cbStatus.setAlignmentX(Component.LEFT_ALIGNMENT);
 
@@ -712,10 +791,11 @@ public class DashboardFrame extends JFrame {
         fileRow.setMaximumSize(new Dimension(1000, 36));
         fileRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JTextField txtUrl = new JTextField("https://youtube.com/watch?v=...");
-        JButton btnBrowse = new JButton("📁 Arquivo...");
+        JTextField txtUrl = new JTextField();
+        txtUrl.putClientProperty("JTextField.placeholderText", "Cole um link do YouTube ou selecione um arquivo");
+        JButton btnBrowse = new JButton("Selecionar vídeo...");
         btnBrowse.addActionListener(e -> {
-            JFileChooser chooser = new JFileChooser();
+            JFileChooser chooser = createVideoFileChooser();
             int r = chooser.showOpenDialog(dialog);
             if (r == JFileChooser.APPROVE_OPTION) {
                 txtUrl.setText(chooser.getSelectedFile().getAbsolutePath());
@@ -724,15 +804,16 @@ public class DashboardFrame extends JFrame {
         fileRow.add(txtUrl, BorderLayout.CENTER);
         fileRow.add(btnBrowse, BorderLayout.EAST);
 
-        JTextArea txtDesc = new JTextArea(4, 25);
+        JTextArea txtDesc = new JTextArea(5, 25);
         txtDesc.setLineWrap(true);
         txtDesc.setWrapStyleWord(true);
+        txtDesc.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        txtDesc.setMargin(new Insets(8, 10, 8, 10));
         JScrollPane scrollDesc = new JScrollPane(txtDesc);
-        scrollDesc.setMaximumSize(new Dimension(1000, 90));
+        scrollDesc.setMaximumSize(new Dimension(1000, 120));
         scrollDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        // Inserção com gaps de 8px entre rótulos e campos
-        form.add(criarLabelCampo("Título do Vídeo:"));
+        form.add(criarLabelCampo("Título do vídeo *"));
         form.add(Box.createRigidArea(new Dimension(0, 8)));
         form.add(txtTitulo);
         form.add(Box.createRigidArea(new Dimension(0, 16)));
@@ -742,29 +823,32 @@ public class DashboardFrame extends JFrame {
         form.add(cbCategoria);
         form.add(Box.createRigidArea(new Dimension(0, 16)));
 
-        form.add(criarLabelCampo("Duração (ex: 15:30):"));
-        form.add(Box.createRigidArea(new Dimension(0, 8)));
-        form.add(txtDuracao);
-        form.add(Box.createRigidArea(new Dimension(0, 16)));
-
         form.add(criarLabelCampo("Status de Publicação:"));
         form.add(Box.createRigidArea(new Dimension(0, 8)));
         form.add(cbStatus);
         form.add(Box.createRigidArea(new Dimension(0, 16)));
 
-        form.add(criarLabelCampo("Link do YouTube ou Caminho do Arquivo:"));
+        form.add(criarLabelCampo("Link do YouTube ou arquivo de vídeo *"));
         form.add(Box.createRigidArea(new Dimension(0, 8)));
         form.add(fileRow);
+        JLabel formatsHint = new JLabel("Vídeos: MP4, MOV, MKV, AVI, WebM, M4V, MPEG, WMV, FLV, 3GP e TS.");
+        formatsHint.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        formatsHint.setForeground(new Color(145, 155, 172));
+        formatsHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        form.add(Box.createRigidArea(new Dimension(0, 5)));
+        form.add(formatsHint);
+        JLabel localFileNote = new JLabel("O arquivo local fica associado ao cadastro; esta ação não o envia ao YouTube.");
+        localFileNote.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        localFileNote.setForeground(new Color(145, 155, 172));
+        localFileNote.setAlignmentX(Component.LEFT_ALIGNMENT);
+        form.add(Box.createRigidArea(new Dimension(0, 4)));
+        form.add(localFileNote);
         form.add(Box.createRigidArea(new Dimension(0, 16)));
 
         form.add(criarLabelCampo("Descrição do Vídeo:"));
         form.add(Box.createRigidArea(new Dimension(0, 8)));
         form.add(scrollDesc);
         form.add(Box.createRigidArea(new Dimension(0, 24)));
-
-        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
-        btnRow.setOpaque(false);
-        btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JButton btnCancelar = new JButton("Cancelar");
         btnCancelar.setPreferredSize(new Dimension(100, 36));
@@ -781,18 +865,26 @@ public class DashboardFrame extends JFrame {
                 JOptionPane.showMessageDialog(dialog, "O título do vídeo é obrigatório.", "Aviso", JOptionPane.WARNING_MESSAGE);
                 return;
             }
+            String origem = txtUrl.getText().trim();
+            if (origem.isEmpty() || !isValidVideoReference(origem)) {
+                JOptionPane.showMessageDialog(dialog,
+                        "Selecione um arquivo de vídeo existente ou informe um link válido do YouTube.",
+                        "Vídeo obrigatório", JOptionPane.WARNING_MESSAGE);
+                txtUrl.requestFocusInWindow();
+                return;
+            }
 
             String id = "VID-" + String.format("%03d", videoList.size() + 1);
             Video novo = new Video(
                     id,
                     titulo,
                     (String) cbCategoria.getSelectedItem(),
-                    txtDuracao.getText().trim(),
+                    "—",
                     0,
                     0,
                     (String) cbStatus.getSelectedItem(),
                     txtDesc.getText().trim(),
-                    txtUrl.getText().trim()
+                    origem
             );
 
             videoList.add(novo);
@@ -802,13 +894,21 @@ public class DashboardFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "Vídeo cadastrado com sucesso!", "Sucesso", JOptionPane.INFORMATION_MESSAGE);
         });
 
-        btnRow.add(btnCancelar);
-        btnRow.add(btnSalvar);
-        form.add(btnRow);
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        footer.setBackground(new Color(36, 40, 48));
+        footer.setBorder(new EmptyBorder(10, 30, 18, 30));
+        footer.add(btnCancelar);
+        footer.add(btnSalvar);
 
-        JScrollPane scrollDialog = new JScrollPane(form);
+        JScrollPane scrollDialog = new JScrollPane(form,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scrollDialog.setBorder(null);
+        scrollDialog.getViewport().setBackground(new Color(36, 40, 48));
+        scrollDialog.getVerticalScrollBar().setUnitIncrement(16);
         dialog.add(scrollDialog, BorderLayout.CENTER);
+        dialog.add(footer, BorderLayout.SOUTH);
+        dialog.getRootPane().setDefaultButton(btnSalvar);
         dialog.setVisible(true);
     }
 
@@ -1199,6 +1299,68 @@ public class DashboardFrame extends JFrame {
         return id != null && id.matches("[A-Za-z0-9_-]{11}");
     }
 
+    private JFileChooser createVideoFileChooser() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Selecionar arquivo de vídeo");
+        chooser.setApproveButtonText("Selecionar vídeo");
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                "Arquivos de vídeo (MP4, MOV, MKV, AVI, WebM, M4V, MPEG, WMV)",
+                "mp4", "mov", "mkv", "avi", "webm", "m4v", "mpg", "mpeg", "wmv", "flv", "3gp", "ts"));
+        return chooser;
+    }
+
+    private boolean isSupportedVideoFile(File file) {
+        if (file == null || !file.isFile()) return false;
+        String name = file.getName().toLowerCase(Locale.ROOT);
+        int dot = name.lastIndexOf('.');
+        if (dot < 0) return false;
+        String extension = name.substring(dot + 1);
+        return java.util.Arrays.asList("mp4", "mov", "mkv", "avi", "webm", "m4v", "mpg", "mpeg", "wmv", "flv", "3gp", "ts").contains(extension);
+    }
+
+    private boolean isValidVideoReference(String value) {
+        if (value == null || value.isBlank()) return false;
+        if (isYouTubeUrl(value)) return true;
+        return isSupportedVideoFile(new File(value));
+    }
+
+    private boolean isYouTubeUrl(String value) {
+        try {
+            URI uri = URI.create(value.trim());
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) return false;
+            host = host.toLowerCase(Locale.ROOT);
+            boolean youtubeHost = host.equals("youtu.be") || host.equals("youtube.com") || host.endsWith(".youtube.com");
+            if (!youtubeHost) return false;
+            String videoId = null;
+            if (host.equals("youtu.be")) {
+                String path = uri.getPath();
+                if (path != null && path.length() > 1) videoId = path.substring(1).split("/")[0];
+            } else {
+                String query = uri.getRawQuery();
+                if (query != null) {
+                    for (String pair : query.split("&")) {
+                        if (pair.startsWith("v=")) { videoId = pair.substring(2); break; }
+                    }
+                }
+                if (videoId == null) {
+                    String[] segments = uri.getPath() == null ? new String[0] : uri.getPath().split("/");
+                    for (int i = 1; i + 1 < segments.length; i++) {
+                        if (segments[i].equals("shorts") || segments[i].equals("embed") || segments[i].equals("live")) {
+                            videoId = segments[i + 1];
+                            break;
+                        }
+                    }
+                }
+            }
+            return isYouTubeVideoId(videoId);
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+    }
+
     // ==========================================
     // 4. PAINEL: NOVO VÍDEO COMPLETO
     // ==========================================
@@ -1215,7 +1377,7 @@ public class DashboardFrame extends JFrame {
                 new EmptyBorder(26, 32, 26, 32)
         ));
 
-        JLabel lblTitle = new JLabel("➕ Cadastrar e Publicar Novo Vídeo");
+        JLabel lblTitle = new JLabel("Cadastrar Novo Vídeo");
         lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
         lblTitle.setForeground(Color.WHITE);
         lblTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -1230,11 +1392,8 @@ public class DashboardFrame extends JFrame {
         cbCat.setMaximumSize(new Dimension(800, 36));
         cbCat.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JTextField txtDuration = new JTextField("10:00");
-        txtDuration.setMaximumSize(new Dimension(800, 36));
-        txtDuration.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         JComboBox<String> cbStat = new JComboBox<>(new String[]{"Publicado", "Rascunho", "Privado", "Não Listado"});
+        cbStat.setSelectedItem("Rascunho");
         cbStat.setMaximumSize(new Dimension(800, 36));
         cbStat.setAlignmentX(Component.LEFT_ALIGNMENT);
 
@@ -1243,9 +1402,10 @@ public class DashboardFrame extends JFrame {
         filePanel.setMaximumSize(new Dimension(800, 36));
         filePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         JTextField txtFilePath = new JTextField();
-        JButton btnBrowse = new JButton("📁 Procurar Arquivo...");
+        txtFilePath.putClientProperty("JTextField.placeholderText", "Cole um link do YouTube ou selecione um arquivo de vídeo");
+        JButton btnBrowse = new JButton("Selecionar vídeo...");
         btnBrowse.addActionListener(e -> {
-            JFileChooser chooser = new JFileChooser();
+            JFileChooser chooser = createVideoFileChooser();
             int ret = chooser.showOpenDialog(this);
             if (ret == JFileChooser.APPROVE_OPTION) {
                 File file = chooser.getSelectedFile();
@@ -1262,7 +1422,7 @@ public class DashboardFrame extends JFrame {
         scrollDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         // Gaps generosos entre labels e inputs para layout limpo e agradável
-        formCard.add(criarLabelCampo("Título do Vídeo:"));
+        formCard.add(criarLabelCampo("Título do Vídeo *:"));
         formCard.add(Box.createRigidArea(new Dimension(0, 8)));
         formCard.add(txtTitle);
         formCard.add(Box.createRigidArea(new Dimension(0, 16)));
@@ -1272,19 +1432,26 @@ public class DashboardFrame extends JFrame {
         formCard.add(cbCat);
         formCard.add(Box.createRigidArea(new Dimension(0, 16)));
 
-        formCard.add(criarLabelCampo("Duração estimada:"));
-        formCard.add(Box.createRigidArea(new Dimension(0, 8)));
-        formCard.add(txtDuration);
-        formCard.add(Box.createRigidArea(new Dimension(0, 16)));
-
         formCard.add(criarLabelCampo("Status inicial:"));
         formCard.add(Box.createRigidArea(new Dimension(0, 8)));
         formCard.add(cbStat);
         formCard.add(Box.createRigidArea(new Dimension(0, 16)));
 
-        formCard.add(criarLabelCampo("Arquivo local do vídeo ou URL:"));
+        formCard.add(criarLabelCampo("Link do YouTube ou arquivo de vídeo *:"));
         formCard.add(Box.createRigidArea(new Dimension(0, 8)));
         formCard.add(filePanel);
+        JLabel supportedFormats = new JLabel("Formatos: MP4, MOV, MKV, AVI, WebM, M4V, MPEG, WMV, FLV, 3GP e TS.");
+        supportedFormats.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        supportedFormats.setForeground(new Color(145, 155, 172));
+        supportedFormats.setAlignmentX(Component.LEFT_ALIGNMENT);
+        formCard.add(Box.createRigidArea(new Dimension(0, 5)));
+        formCard.add(supportedFormats);
+        JLabel localUploadNote = new JLabel("O arquivo local fica associado ao cadastro; esta ação não o envia ao YouTube.");
+        localUploadNote.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        localUploadNote.setForeground(new Color(145, 155, 172));
+        localUploadNote.setAlignmentX(Component.LEFT_ALIGNMENT);
+        formCard.add(Box.createRigidArea(new Dimension(0, 4)));
+        formCard.add(localUploadNote);
         formCard.add(Box.createRigidArea(new Dimension(0, 16)));
 
         formCard.add(criarLabelCampo("Descrição do Vídeo:"));
@@ -1304,18 +1471,25 @@ public class DashboardFrame extends JFrame {
                 JOptionPane.showMessageDialog(this, "Informe o título do vídeo.", "Aviso", JOptionPane.WARNING_MESSAGE);
                 return;
             }
+            String source = txtFilePath.getText().trim();
+            if (!isValidVideoReference(source)) {
+                JOptionPane.showMessageDialog(this, "Selecione um vídeo existente ou informe um link válido do YouTube.",
+                        "Vídeo obrigatório", JOptionPane.WARNING_MESSAGE);
+                txtFilePath.requestFocusInWindow();
+                return;
+            }
 
             String id = "VID-" + String.format("%03d", videoList.size() + 1);
             Video novo = new Video(
                     id,
                     t,
                     (String) cbCat.getSelectedItem(),
-                    txtDuration.getText().trim(),
+                    "—",
                     0,
                     0,
                     (String) cbStat.getSelectedItem(),
                     txtDescricao.getText().trim(),
-                    txtFilePath.getText().trim()
+                    source
             );
 
             videoList.add(novo);
@@ -1560,6 +1734,32 @@ public class DashboardFrame extends JFrame {
     /**
      * Renderizador customizado para exibir os status como badges/pills coloridos na tabela.
      */
+    private static class DashboardTableCellRenderer extends DefaultTableCellRenderer {
+        private static final long serialVersionUID = 1L;
+        private final int alignment;
+
+        DashboardTableCellRenderer(int alignment) {
+            this.alignment = alignment;
+            setOpaque(true);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
+                                                       boolean hasFocus, int row, int column) {
+            JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            label.setHorizontalAlignment(alignment);
+            label.setBorder(new EmptyBorder(0, 10, 0, 10));
+            if (isSelected) {
+                label.setBackground(table.getSelectionBackground());
+                label.setForeground(table.getSelectionForeground());
+            } else {
+                label.setBackground(row % 2 == 0 ? new Color(39, 44, 53) : new Color(35, 40, 49));
+                label.setForeground(new Color(220, 226, 236));
+            }
+            return label;
+        }
+    }
+
     private static class StatusBadgeRenderer extends DefaultTableCellRenderer {
         private static final long serialVersionUID = 1L;
 
@@ -1569,6 +1769,7 @@ public class DashboardFrame extends JFrame {
             String status = value != null ? value.toString() : "";
             label.setHorizontalAlignment(SwingConstants.CENTER);
             label.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            label.setBorder(new EmptyBorder(0, 6, 0, 6));
 
             if (!isSelected) {
                 switch (status) {

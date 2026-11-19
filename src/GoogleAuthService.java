@@ -437,13 +437,16 @@ public class GoogleAuthService {
                     ".icon { width: 64px; height: 64px; line-height: 64px; border-radius: 50%; background: #34A853; font-size: 34px; margin: 0 auto 20px; font-weight: bold; }" +
                     "h2 { margin: 0 0 12px; font-size: 22px; }" +
                     "p { color: #9da8be; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }" +
-                    ".btn { background: #4285F4; color: white; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block; }" +
+                    ".btn { background: #4285F4; color: white; padding: 10px 24px; border: 0; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; }" +
+                    ".fallback { display: none; color: #c6d0e0; font-size: 13px; margin: 18px 0 0; }" +
                     "</style></head><body><div class=\"card\">" +
                     "<div class=\"icon\">" + (statusCode == 200 ? "✓" : "!") + "</div>" +
                     "<h2>" + titulo + "</h2>" +
                     "<p>" + mensagem + "</p>" +
-                    "<a class=\"btn\" href=\"javascript:window.close()\">Fechar Aba</a>" +
-                    "</div></body></html>";
+                    "<button id=\"closeTab\" class=\"btn\" type=\"button\" onclick=\"fecharAba()\">Fechar aba</button>" +
+                    "<p id=\"closeFallback\" class=\"fallback\">O navegador bloqueou o fechamento autom\u00e1tico. Feche esta aba manualmente; a autentica\u00e7\u00e3o continua no aplicativo.</p>" +
+                    "</div><script>function fecharAba(){try{var w=window.open('','_self');if(w)w.close();window.close();}catch(e){}" +
+                    "window.setTimeout(function(){if(!window.closed){document.getElementById('closeFallback').style.display='block';document.getElementById('closeTab').textContent='Feche esta aba manualmente';}},150);}</script></body></html>";
 
             byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
